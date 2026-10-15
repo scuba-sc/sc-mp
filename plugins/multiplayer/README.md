@@ -82,8 +82,10 @@ missions or inventory is promised.
 Avatar ghosts use the locally selected NPC archetype; peer avatar classes are
 informational rather than arbitrary remote actor-spawn authority. Ship ghosts
 are bounded, class-syntax-checked and validated by the owning entity provider.
-Only authenticated session members allocate peer records; at most 15 peers and
-32 active/pending-removal ghosts. Actors use `game.actors.spawn_npc/despawn`,
+Only authenticated session members allocate peer records; at most one fewer than the session size
+(15 against SDK 2.2.0, 50 against an SDK that knows sco.net 1.1) and 32 active/pending-removal
+ghosts, drawn and waiting to be removed together (players past the budget are listed and get a ghost
+as soon as one goes). Actors use `game.actors.spawn_npc/despawn`,
 ships use `game.entities.spawn/despawn`, and transforms are owned public calls.
 Streaming/retry/removal tickets are bounded. An ambiguous `alive=0` never erases
 ownership; provider unload cleanup retains any refused removal. There are no
@@ -142,6 +144,7 @@ player name in any of them):
 | `join request accepted: waiting for the session (0)` / `join request refused (N)` | after **Join**, N being the result code; accepted is not a connection |
 | `relay server found: peer 1 hosts the session and relays players; it is not shown or counted as a player` | the first valid roster of a session |
 | `joined relay server as peer P in slot S (generation G): N of M players in the session, nearby-only off` | the same roster, when it lists this player: **this is the line that shows a join to a relay server** |
+| `sco.net marks peer P as a server: it is not shown or counted as a player` | the first time sco.net's flag marks a member as a server in a session (the join event of peer 1, or its first message); sco.net 1.1 only |
 | `relay roster: N of M players in the session, slot S (generation G), nearby-only off` | a later roster whose players, slot or mode differ (an unchanged roster is silent) |
 | `relay roster: N of M players ... this player is not listed yet` | a roster that does not list this player |
 | `nearby-only: poses go to the relay server on multiplayer.near_up and come back on multiplayer.near.S` | the roster says nearby-only is on and lists this player: the module now listens on its slot |
@@ -151,12 +154,52 @@ player name in any of them):
 | `left the relay session` | the session ends or this player leaves |
 
 `multiplayer.status` and the panel add `via relay server (not a player), slot S, nearby-only off` once a
-roster has been read.
+roster has been read. When sco.net marks the host as a server and no roster has come, they add
+`session host is a server (not a player)` instead (next section).
 
 **Not run in game.** The workflow test, the relay-join test (synthetic game providers on a real
 `sco::net::Core` joining a real sco-relay over loopback UDP) and the Windows build are the only evidence;
 no real game, EAC, admission collector or LAN was involved. The production-shell admission blocker above
 is unchanged: until a positively grounded admission collector exists, that shell refuses Host and Join.
+
+## Servers and sessions of more than 16 players (sco.net 1.1)
+
+Some of this depends on the SDK the module is built against and on the runtime it runs on. Built against SDK 2.2.0
+the module behaves as before, apart from the two items marked "any SDK".
+
+- **The server flag.** sco.net 1.1 adds `get_peer_flags`: a host that is a server (a headless host that takes no player
+  seat, such as sco-relay built on that library) is marked `SCO_NET_PEER_F_SERVER`. Built against an SDK that
+  defines `SCO_NET_VERSION_1_1`, the module asks for sco.net 1.1 first. If the table it gets is at least 72 bytes
+  and has the `get_peer_flags` pointer set, it reads the flag of a peer before making a record for it. A marked server
+  gets no record, no ghost, no row in "Other players" and no count, even if it sends a pose or a spawn. `mod.log` says
+  so once per session (see the table above), and `multiplayer.status` and the panel add
+  `session host is a server (not a player)`, or the relay note when the server also sends its roster. A flag that
+  cannot be read (the call fails, for example `SCO_NOT_FOUND` because the peer has left) is not taken for "a player":
+  no record is made then, and the next message from that peer asks again.
+- **What the flag does not replace.** An unmarked host is a player who hosts, or a relay server built before the
+  flag, and the module cannot tell which. So the rules of the relay section stay: the join event of peer 1 makes no
+  record, a host that is a player gets its record from its first spawn or pose, and from the first roster on peer 1 is
+  never added. The roster still decides for a server that is not marked, and for a runtime older than sco.net 1.1.
+- **Older SDK or runtime.** Against SDK 2.2.0 (no `SCO_NET_VERSION_1_1`) the flag code is not compiled. A module built
+  against a newer SDK that runs on a runtime with sco.net 1.0 only gets the request for 1.1 refused, takes the 1.0 table,
+  never reads past `self_peer` in a table smaller than 72 bytes, and so marks nobody.
+- **Sessions of more than 16 players (any SDK).** `get_peers` is called with room for 16 entries, which is what sco.net 1.0
+  promised. A larger session (a runtime that hosts up to `SCO_NET_SESSION_MAX_PEERS`) answers `SCO_TOO_MANY` with the
+  number of members, and the module calls again with room for all of them, the way `scosdk::Net::Peers` does. It used
+  to take that answer for a failure, so a session of 17 or more listed nobody. An answer without a usable count, or a
+  count over 1024, still means no list and no record.
+- **The module's own limit** follows the session: one record fewer than `SCO_NET_SESSION_MAX_PEERS` when the SDK has it
+  (51 seats, so 50 records), else one fewer than `SCO_NET_MAX_PEERS` (16, so 15, the old limit).
+- **Ghosts (any SDK).** The budget stays 32 ghosts, drawn and waiting to be removed together. It used to be counted as
+  two for every listed player, which with more than 16 players listed would have left every player without a ghost. It is
+  now counted in the ghosts held: the first 32 are drawn, and a player past that gets one when one goes. The bound is the
+  same; with 15 players or fewer the only difference is that a player who has no ghost yet no longer reserves two places.
+- **Pose limit.** `relay_wire.h` keeps its own number for the largest pose (`kPoseMaxBytes`, 1008). A `static_assert` in
+  `multiplayer.cpp` stops the build if it ever differs from `multiplayer_wire.h`'s `kMaxPose`.
+
+A runtime offers any of this only after sco-core's "Raise the sco.net session limit and the private-session cap from 16
+to 51" and "Let a sco.net host be a server, not a player (sco.net 1.1)" are merged and released; until then the module
+only lists past 16 on a runtime that already hosts more. **Not run in game.**
 
 ## Ghost motion
 
@@ -227,7 +270,7 @@ lost, 1000 runs of each case. "Before" is the `motion.h` before the slow-sender 
   as movement and the ghost slides and leads instead of starting over. None of this ran in game.
 
 `tools/multiplayer_motion_test.cpp` feeds the same jittered, lossy 10 Hz path (60 ms +-35 ms, 12 in 100
-lost, a burst of four lost, one pose reordered; 20 s) to the unmodified sc-offline #126 module and to this one, in real time at 60
+lost, a burst of four lost, one pose reordered; 20 s) to the unmodified module (this repository's `main`, the same files as sc-offline v0.7.8) and to this one, in real time at 60
 frames a second, and counts per ghost the freezes (4 frames or more in a row moving less than a quarter of
 the player) and the jumps (a frame moving more than three times the player). It prints both modules' counts, and fails unless
 this module has at most half the freezes, no more jumps and a smaller largest step. It also checks the extrapolation
@@ -254,6 +297,10 @@ that needs a connection needs a shell that grants admission. Report what `mod.lo
 4. Two players on the server: each sees one ghost, the panel lists one other player, and the server is not in the list.
 5. Press **Leave**, or stop the server: `left the relay session`, the ghosts go away.
 6. A session a player hosts: no relay line in `mod.log`; everything as before.
+6a. A server marked by sco.net 1.1 (a runtime newer than SDK 2.2.0): from the host's join event on, `mod.log` has
+    `sco.net marks peer 1 as a server: ...` and the status says `session host is a server (not a player)`; the server is
+    not in the list and has no ghost.
+6b. A session of more than 16 players on such a runtime: every player is in the list (up to 50), the first 32 have ghosts.
 7. A third player in another place with nearby-only on: no ghost for them, `nearby-only: poses go to the relay server ...` in `mod.log`.
 8. The other player walks, stops and turns: the ghost follows about a quarter of a second behind with no freeze
    at a dropped message and no jump; a quantum jump or a respawn moves the ghost at once.
@@ -277,7 +324,7 @@ cmake --install build-multiplayer --component multiplayer --prefix stage
 
 `-DSCO_WORKFLOW_TESTS=ON` also builds `multiplayer-motion-test` (ctest name `multiplayer-motion`, about 25 s in
 real time). Add `-DSCO_MOTION_BASELINE_DIR=<folder with the unmodified multiplayer.cpp and multiplayer_wire.h of
-sc-offline #126, commit 481b99e>` and it runs that module beside this one on the same path and compares them.
+this repository's `main`, commit 91cbc95, which are sc-offline v0.7.8's (4db58d2)>` and it runs that module beside this one on the same path and compares them.
 
 The enabled `plugin.ini` and module install into `stage/data/plugins/multiplayer`
 without a `disabled` marker. Windows emits `multiplayer.dll`; macOS produces a

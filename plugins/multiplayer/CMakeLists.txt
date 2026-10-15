@@ -46,8 +46,9 @@ if(SCO_WORKFLOW_TESTS)
   add_test(NAME multiplayer-module-workflow COMMAND multiplayer-module-test $<TARGET_FILE:sc-offline-multiplayer>)
   set_tests_properties(multiplayer-module-workflow PROPERTIES TIMEOUT 30)
 
-  # The motion test loads this module and, when SCO_MOTION_BASELINE_DIR holds the unmodified sc-offline #126
-  # multiplayer.cpp and multiplayer_wire.h (git show 481b99e:plugins/multiplayer/...), that one too, builds the
+  # The motion test loads this module and, when SCO_MOTION_BASELINE_DIR holds the unmodified multiplayer.cpp
+  # and multiplayer_wire.h (git show 91cbc95:plugins/multiplayer/..., this repository's main; the same files as
+  # sc-offline v0.7.8, 4db58d2), that one too, builds the
   # same synthetic path for both and compares their ghosts. The unmodified module is built without warnings
   # shown: it is not this change's code.
   set(SCO_MOTION_BASELINE_DIR "" CACHE PATH "Folder with the unmodified multiplayer.cpp and multiplayer_wire.h the motion test compares against")

@@ -46,6 +46,19 @@ enum ChannelIndex : unsigned { kPoseChannel,kSpawnChannel,kDespawnChannel,kRelay
 constexpr const char* channels[]={"multiplayer.pose","multiplayer.spawn","multiplayer.despawn","multiplayer.relay","multiplayer.near_up"};
 static_assert(sizeof(channels)/sizeof(channels[0])==kChannelCount,"one name per channel");
 constexpr uint64_t kHostPeer=1; // sco.net: the session host is always peer 1
+// How many peers a session can hold, self and a server included. sco.net 1.0 promised SCO_NET_MAX_PEERS (16). An SDK that has
+// SCO_NET_SESSION_MAX_PEERS belongs to a runtime that hosts that many (51), and then the module lists them all. Built against SDK
+// 2.2.0 the 1.0 number stays the limit, as it was.
+#ifdef SCO_NET_SESSION_MAX_PEERS
+constexpr size_t kSessionPeers=SCO_NET_SESSION_MAX_PEERS;
+#else
+constexpr size_t kSessionPeers=SCO_NET_MAX_PEERS;
+#endif
+constexpr uint32_t kMembersLimit=1024; // a member count past this is not a session: sco.net is broken, so no record is made
+constexpr size_t kGhostBudget=32;      // active and pending-removal ghosts together, however many players are listed
+// relay_wire.h is a copy of the server's contract and keeps its own number for the largest pose. The two must agree, or a pose
+// this module sends would not fit the server's multiplayer.near_up (or the other way round).
+static_assert(rw::kPoseMaxBytes==mpwire::kMaxPose,"relay_wire.h kPoseMaxBytes must equal the plugin's own largest pose (multiplayer_wire.h kMaxPose)");
 constexpr const char* panelId="multiplayer.session";
 constexpr const char* defaultAvatar="PU_Human-Microtech-DeskWorker-Male-DistroHub_Civilian_01";
 struct Settings {
@@ -81,6 +94,7 @@ struct Relay {
     unsigned bad=0;                   // malformed relay messages this session
     bool nearWarned=false;            // the "cannot listen on multiplayer.near.<slot>" warning was written this session
 } relay;
+bool serverNoted=false; // sco.net marked a session member as a server and mod.log said so (once per session)
 uint64_t Now() { return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()); }
 void Wipe(char* s,size_t n) { volatile char* p=s;while(n--) *p++=0; }
 template<size_t N> bool Text(char (&out)[N],const char* value,size_t max=N-1) {
@@ -108,6 +122,14 @@ void Services() {
     actors=Query<sc_actors_v1>(SC_ACTORS_NAME,SC_ACTORS_VERSION_1_0);
     entities=Query<sc_entities_v1>(SC_ENTITIES_NAME,SC_ENTITIES_VERSION_1_0);
     vehicles=Query<sc_vehicles_v1>(SC_VEHICLES_SERVICE_NAME,SC_VEHICLES_SERVICE_VERSION);
+}
+// sco.net 1.1 adds get_peer_flags. When the SDK knows it, ask for it first: a runtime older than that (SDK 2.2.0) answers that it
+// has no such version, and the 1.0 table does everything else.
+const sco_net_v1* QueryNet() {
+#ifdef SCO_NET_VERSION_1_1
+    if(const auto* t=Query<sco_net_v1>(SCO_NET_NAME,SCO_NET_VERSION_1_1)) return t;
+#endif
+    return Query<sco_net_v1>(SCO_NET_NAME,SCO_NET_VERSION_1_0);
 }
 bool Active() { return METHOD(net,is_active) && net->is_active(); }
 sc_private_session_state_v1 State() {
@@ -188,6 +210,7 @@ void ResetRelay() {
     if(relay.seen) Log(SCO_LOG_INFO,"left the relay session");
     SetNearChannel("");
     relay=Relay();
+    serverNoted=false;
 }
 void Clear() { for(auto& p:peers) { Remove(p.avatar);Remove(p.ship); }peers.clear();RetryCleanup();announced=false;announcedShip[0]=0;shipId=0;ResetRelay(); }
 Peer* Find(uint64_t id) { for(auto& p:peers) if(p.id==id) return &p;return nullptr; }
@@ -195,14 +218,63 @@ void DropPeer(uint64_t id) {
     auto it=std::find_if(peers.begin(),peers.end(),[&](const Peer& p){return p.id==id;});
     if(it!=peers.end()) { Remove(it->avatar);Remove(it->ship);peers.erase(it);RetryCleanup(); }
 }
+// The session's members, read from sco.net. The first buffer holds what 1.0 promised (SCO_NET_MAX_PEERS). A larger session (a runtime
+// that hosts up to SCO_NET_SESSION_MAX_PEERS) answers SCO_TOO_MANY with the number of members, and the call is made again with room
+// for all of them, as scosdk::Net::Peers does. Any other answer, or a count that makes no sense, is no list at all.
+bool Members(std::vector<sco_net_peer>& out) {
+    if(!METHOD(net,get_peers)) return false;
+    uint32_t room=SCO_NET_MAX_PEERS;
+    for(int attempt=0;attempt<4;++attempt) {
+        out.assign(room,sco_net_peer{});
+        uint32_t count=room;
+        const sco_result r=net->get_peers(out.data(),&count);
+        if(r==SCO_OK) {
+            if(count>room) return false;
+            out.resize(count);return true;
+        }
+        if(r!=SCO_TOO_MANY || count<=room || count>kMembersLimit) return false;
+        room=count;
+    }
+    return false;
+}
+// Whether sco.net marks a peer as a server (sco.net 1.1, get_peer_flags): a host that takes no player seat. Three answers.
+// Marked: the flag says server. Unmarked: it says player, or this sco.net cannot mark anyone (a 1.0 table, or an SDK without
+// 1.1), and then only the relay roster can tell a server. Unreadable: the call exists and failed, which is not "a player", so no
+// record is made now and the next message from that peer asks again (in a join event, NOT_FOUND means the peer has left since).
+enum class Mark { Unmarked, Marked, Unreadable };
+Mark MarkOf(uint64_t id) {
+#ifdef SCO_NET_VERSION_1_1
+    // The member is in a table of at least 72 bytes only. The size and the pointer are both checked before the call.
+    if(METHOD(net,get_peer_flags)) {
+        uint32_t flags=0;
+        if(net->get_peer_flags(id,&flags)!=SCO_OK) return Mark::Unreadable;
+        return (flags&SCO_NET_PEER_F_SERVER)?Mark::Marked:Mark::Unmarked;
+    }
+#else
+    (void)id;
+#endif
+    return Mark::Unmarked;
+}
+// Said once per session. A marked server never gets a peer record, so there is nothing to remove.
+void NoteServer(uint64_t id) {
+    if(serverNoted) return;
+    serverNoted=true;
+    Log(SCO_LOG_INFO,"sco.net marks peer %llu as a server: it is not shown or counted as a player",Ull(id));
+}
 Peer* Add(uint64_t id) {
     if(!id || !METHOD(net,self_peer) || id==net->self_peer() || !Active()) return nullptr;
-    if(relay.seen && id==kHostPeer) return nullptr; // the relay server is not a player
+    if(relay.seen && id==kHostPeer) return nullptr; // the relay server is not a player (its roster said so)
     if(auto* p=Find(id)) return p;
+    if(peers.size()>=kSessionPeers-1) return nullptr;
+    // A server is not a player. sco.net 1.1 marks it with a flag; a relay server that is not marked says so with its roster
+    // instead (relay.seen, above), which is also all that a runtime or an SDK without the flag has.
+    const Mark mark=MarkOf(id);
+    if(mark==Mark::Marked) { NoteServer(id);return nullptr; }
+    if(mark==Mark::Unreadable) return nullptr;
     // Only authenticated session members get a record. Never trust raw sender IDs.
-    sco_net_peer members[SCO_NET_MAX_PEERS]{};uint32_t count=SCO_NET_MAX_PEERS;
-    if(!METHOD(net,get_peers) || net->get_peers(members,&count)!=SCO_OK || count>SCO_NET_MAX_PEERS || peers.size()>=SCO_NET_MAX_PEERS-1) return nullptr;
-    bool member=false;for(uint32_t i=0;i<count;++i) if(members[i].peer_id==id) member=true;
+    std::vector<sco_net_peer> members;
+    if(!Members(members)) return nullptr;
+    bool member=false;for(const auto& m:members) if(m.peer_id==id) member=true;
     if(!member) return nullptr;
     peers.emplace_back();auto& p=peers.back();p.id=id;
     if(!METHOD(net,get_peer_name) || net->get_peer_name(id,p.name,sizeof(p.name))!=SCO_OK) std::snprintf(p.name,sizeof(p.name),"peer %llu",static_cast<unsigned long long>(id));
@@ -362,9 +434,14 @@ void Announce(bool force) {
 void OnPeer(const char*,const void* data,void*) {
     if(!data) return;
     const auto* e=static_cast<const sco_net_peer_event*>(data);if(e->size<sizeof(*e)) return;
-    // The host (peer 1) may be a relay server, which is not a player and does not say so until its first
-    // multiplayer.relay. A host that is a player gets its record from its first pose or spawn instead.
-    if(e->what==SCO_NET_PEER_JOINED) { if(e->peer.peer_id!=kHostPeer) Add(e->peer.peer_id);if(Active()) Announce(true); }
+    // The host (peer 1) may be a server, which is not a player. sco.net 1.1 marks it, and the mark can be read from this event on.
+    // A relay server without the mark says so with its first multiplayer.relay, so until then the join event of peer 1 makes no
+    // record. A host that is a player gets its record from its first pose or spawn instead.
+    if(e->what==SCO_NET_PEER_JOINED) {
+        if(e->peer.peer_id!=kHostPeer) Add(e->peer.peer_id);
+        else if(Active() && MarkOf(e->peer.peer_id)==Mark::Marked) NoteServer(e->peer.peer_id);
+        if(Active()) Announce(true);
+    }
     if(e->what==SCO_NET_PEER_LEFT) DropPeer(e->peer.peer_id);
 }
 void OnState(const char*,const void* data,void*) {
@@ -391,6 +468,8 @@ bool Resolve(const Peer& p,bool ship,uint64_t now,uint64_t& zone,double pos[3],d
     }
     return false;
 }
+// How many ghosts this module holds: the ones drawn now. The ones whose removal is pending are counted in cleanup.
+size_t GhostsHeld() { size_t n=0;for(const auto& p:peers) n+=(p.avatar.id?1:0)+(p.ship.id?1:0);return n; }
 void UpdateGhost(Peer& p,bool ship,uint64_t now) {
     Ghost& g=ship?p.ship:p.avatar;const char* cls=ship?p.shipClass:p.avatarClass;
     // Remote avatar class is informational: instantiate only the locally chosen
@@ -405,8 +484,10 @@ void UpdateGhost(Peer& p,bool ship,uint64_t now) {
     if(!std::isfinite(distance) || distance>1e8) { Remove(g);return; }
     if(g.id && std::strcmp(g.cls,cls)) Remove(g);
     if(!g.id) {
-        // Failed cleanup owns the budget until successfully initiated/provider unload.
-        if(peers.size()*2+cleanup.size()>32 || (g.lastAttempt && now-g.lastAttempt<30000)) return;
+        // Failed cleanup owns the budget until successfully initiated/provider unload. The budget is counted in ghosts held, not in
+        // players listed: a session of more than 16 players lists them all, and a count by players would leave every one of them
+        // without a ghost. The players past the budget get theirs as soon as a ghost goes.
+        if(GhostsHeld()+cleanup.size()>=kGhostBudget || (g.lastAttempt && now-g.lastAttempt<30000)) return;
         g.lastAttempt=now;uint64_t id=0;sco_result result=SCO_UNAVAILABLE;
         if(ship && METHOD(entities,spawn) && METHOD(entities,despawn)) result=entities->spawn(self,cls,zone,pos,rot,&id);
         if(!ship && METHOD(actors,spawn_npc) && METHOD(actors,despawn)) result=actors->spawn_npc(self,cls,zone,pos,&id);
@@ -421,7 +502,7 @@ void UpdateGhost(Peer& p,bool ship,uint64_t now) {
 }
 // What the status line and the panel add when the session host is a relay server.
 void RelayNote(char* out,size_t cap) {
-    if(!relay.seen) { out[0]=0;return; }
+    if(!relay.seen) { std::snprintf(out,cap,"%s",serverNoted?"; session host is a server (not a player)":"");return; }
     char seat[24];
     if(relay.slot<0) std::snprintf(seat,sizeof(seat),"not listed");else std::snprintf(seat,sizeof(seat),"slot %d",relay.slot);
     std::snprintf(out,cap,"; via relay server (not a player), %s, nearby-only %s%s",seat,relay.nearby?"on":"off",relay.bad?", malformed relay messages ignored":"");
@@ -543,7 +624,7 @@ extern "C" {
 SCO_EXPORT const sco_plugin_info* sco_plugin_query() { return &info; }
 SCO_EXPORT sco_result sco_plugin_load(const sco_api* a,sco_plugin* s) {
     if(!a || !s || a->major!=SCO_API_MAJOR || !METHOD(a,register_command) || !METHOD(a,subscribe) || !METHOD(a,unsubscribe)) return SCO_BAD_ARG;
-    api=a;self=s;Services();net=Query<sco_net_v1>(SCO_NET_NAME,SCO_NET_VERSION_1_0);
+    api=a;self=s;Services();net=QueryNet();
     store=Query<sco_storage_v1>(SCO_STORAGE_NAME,SCO_STORAGE_VERSION_1_0);widgets=Query<sco_widgets_v1>(SCO_WIDGETS_NAME,SCO_WIDGETS_VERSION_1_0);LoadSettings();
     const char* names[]={"multiplayer.status","multiplayer.leave","multiplayer.goto"};const sco_command_fn callbacks[]={Status,Leave,GoTo};
     sco_arg_def who{};who.name="player";who.type=SCO_ARG_STRING;
