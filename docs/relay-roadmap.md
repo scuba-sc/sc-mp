@@ -44,10 +44,12 @@ Done here:
 - The module asks sco.net for version 1.1 when its SDK defines it, and keeps a host that sco.net marks as a server out of
   its peer records, ghosts, list and count. The relay roster still does the same for a server that is not marked.
 - `get_peers` is read past 16 entries (retry on `SCO_TOO_MANY`), the module's own peer limit follows the session size, and
-  the 32-ghost budget is counted in ghosts held instead of two per listed player.
+  in a build against an SDK that has `SCO_NET_SESSION_MAX_PEERS` the 32-ghost budget is counted in ghosts held instead of
+  two per listed player (a build against SDK 2.2.0 keeps the old count).
 - A `static_assert` ties `relay_wire.h`'s `kPoseMaxBytes` to the plugin's own largest pose (yerts' optional note on the
   review of #133).
-- Built and tested against the published SDK 2.2.0 (nothing changes there) and against an SDK packaged from the unmerged
+- Built and tested against the published SDK 2.2.0 (there the flag code is not compiled and the ghosts are counted as before;
+  only the member list is read past 16 entries) and against an SDK packaged from the unmerged
   sco-core branch, on Linux and Windows. **Not run in game.**
 
 Open, not done here:

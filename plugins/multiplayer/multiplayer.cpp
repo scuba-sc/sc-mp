@@ -434,9 +434,12 @@ void Announce(bool force) {
 void OnPeer(const char*,const void* data,void*) {
     if(!data) return;
     const auto* e=static_cast<const sco_net_peer_event*>(data);if(e->size<sizeof(*e)) return;
-    // The host (peer 1) may be a server, which is not a player. sco.net 1.1 marks it, and the mark can be read from this event on.
-    // A relay server without the mark says so with its first multiplayer.relay, so until then the join event of peer 1 makes no
-    // record. A host that is a player gets its record from its first pose or spawn instead.
+    // The host (peer 1) may be a server, which is not a player. The flag (sco.net 1.1) is authoritative when it is set: it can be read
+    // from this event on, and a marked server never gets a record. When the flag is NOT set, the join event of peer 1 still makes no
+    // record, on purpose: an unmarked peer 1 is ambiguous even on a 1.1 table. A relay server built before the flag (sco-relay on
+    // SDK 2.2.0) sends no role and reads as flags 0, exactly like a player who hosts, and taking "unmarked" for "player" would list
+    // that server as a player until its first roster, up to the announce interval. So an unmarked peer 1 waits for its first spawn or
+    // pose (a host that is a player sends both within a tick) or for the roster, as it did on relay-import.
     if(e->what==SCO_NET_PEER_JOINED) {
         if(e->peer.peer_id!=kHostPeer) Add(e->peer.peer_id);
         else if(Active() && MarkOf(e->peer.peer_id)==Mark::Marked) NoteServer(e->peer.peer_id);
@@ -468,8 +471,17 @@ bool Resolve(const Peer& p,bool ship,uint64_t now,uint64_t& zone,double pos[3],d
     }
     return false;
 }
-// How many ghosts this module holds: the ones drawn now. The ones whose removal is pending are counted in cleanup.
+// Whether the 32-ghost budget leaves no room for one more ghost. Failed removals (cleanup) keep their place in it.
+// Built against an SDK without SCO_NET_SESSION_MAX_PEERS (2.2.0) the rule is relay-import's, exactly: two places for every listed
+// player, which fits the 15 players that build can list (30). A build against an SDK that has it lists up to 50 players, and a count
+// by players would leave every one of them without a ghost, so it counts the ghosts held: the first 32 are drawn, and a player past
+// that gets one when one goes. The bound is 32 either way.
+#ifdef SCO_NET_SESSION_MAX_PEERS
 size_t GhostsHeld() { size_t n=0;for(const auto& p:peers) n+=(p.avatar.id?1:0)+(p.ship.id?1:0);return n; }
+bool GhostBudgetFull() { return GhostsHeld()+cleanup.size()>=kGhostBudget; }
+#else
+bool GhostBudgetFull() { return peers.size()*2+cleanup.size()>kGhostBudget; }
+#endif
 void UpdateGhost(Peer& p,bool ship,uint64_t now) {
     Ghost& g=ship?p.ship:p.avatar;const char* cls=ship?p.shipClass:p.avatarClass;
     // Remote avatar class is informational: instantiate only the locally chosen
@@ -484,10 +496,8 @@ void UpdateGhost(Peer& p,bool ship,uint64_t now) {
     if(!std::isfinite(distance) || distance>1e8) { Remove(g);return; }
     if(g.id && std::strcmp(g.cls,cls)) Remove(g);
     if(!g.id) {
-        // Failed cleanup owns the budget until successfully initiated/provider unload. The budget is counted in ghosts held, not in
-        // players listed: a session of more than 16 players lists them all, and a count by players would leave every one of them
-        // without a ghost. The players past the budget get theirs as soon as a ghost goes.
-        if(GhostsHeld()+cleanup.size()>=kGhostBudget || (g.lastAttempt && now-g.lastAttempt<30000)) return;
+        // Failed cleanup owns the budget until successfully initiated/provider unload (GhostBudgetFull says how it is counted).
+        if(GhostBudgetFull() || (g.lastAttempt && now-g.lastAttempt<30000)) return;
         g.lastAttempt=now;uint64_t id=0;sco_result result=SCO_UNAVAILABLE;
         if(ship && METHOD(entities,spawn) && METHOD(entities,despawn)) result=entities->spawn(self,cls,zone,pos,rot,&id);
         if(!ship && METHOD(actors,spawn_npc) && METHOD(actors,despawn)) result=actors->spawn_npc(self,cls,zone,pos,&id);

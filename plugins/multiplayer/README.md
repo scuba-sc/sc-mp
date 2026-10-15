@@ -84,8 +84,8 @@ informational rather than arbitrary remote actor-spawn authority. Ship ghosts
 are bounded, class-syntax-checked and validated by the owning entity provider.
 Only authenticated session members allocate peer records; at most one fewer than the session size
 (15 against SDK 2.2.0, 50 against an SDK that knows sco.net 1.1) and 32 active/pending-removal
-ghosts, drawn and waiting to be removed together (players past the budget are listed and get a ghost
-as soon as one goes). Actors use `game.actors.spawn_npc/despawn`,
+ghosts, drawn and waiting to be removed together (counted as the section on servers and sessions of more
+than 16 players says). Actors use `game.actors.spawn_npc/despawn`,
 ships use `game.entities.spawn/despawn`, and transforms are owned public calls.
 Streaming/retry/removal tickets are bounded. An ambiguous `alive=0` never erases
 ownership; provider unload cleanup retains any refused removal. There are no
@@ -165,7 +165,7 @@ is unchanged: until a positively grounded admission collector exists, that shell
 ## Servers and sessions of more than 16 players (sco.net 1.1)
 
 Some of this depends on the SDK the module is built against and on the runtime it runs on. Built against SDK 2.2.0
-the module behaves as before, apart from the two items marked "any SDK".
+the module behaves as before, apart from the member list being read past 16 entries (the item marked "any SDK").
 
 - **The server flag.** sco.net 1.1 adds `get_peer_flags`: a host that is a server (a headless host that takes no player
   seat, such as sco-relay built on that library) is marked `SCO_NET_PEER_F_SERVER`. Built against an SDK that
@@ -176,10 +176,13 @@ the module behaves as before, apart from the two items marked "any SDK".
   `session host is a server (not a player)`, or the relay note when the server also sends its roster. A flag that
   cannot be read (the call fails, for example `SCO_NOT_FOUND` because the peer has left) is not taken for "a player":
   no record is made then, and the next message from that peer asks again.
-- **What the flag does not replace.** An unmarked host is a player who hosts, or a relay server built before the
-  flag, and the module cannot tell which. So the rules of the relay section stay: the join event of peer 1 makes no
-  record, a host that is a player gets its record from its first spawn or pose, and from the first roster on peer 1 is
-  never added. The roster still decides for a server that is not marked, and for a runtime older than sco.net 1.1.
+- **What the flag does not replace.** The flag is authoritative when it is set. An unmarked peer 1 is ambiguous even on a
+  1.1 table: a relay server built before the flag (sco-relay on SDK 2.2.0) sends no role, so a 1.1 player reads flags 0
+  for it, exactly as for a player who hosts. Taking "unmarked" for "player" would list that server as a player until its
+  first roster (up to its announce interval). So the rules of the relay section stay for an unmarked peer 1: its join event
+  makes no record, it gets one from its first spawn or pose (a host that is a player sends both within a tick), and from the
+  first roster on peer 1 is never added. The roster still decides for a server that is not marked, and for a runtime older
+  than sco.net 1.1. A marked server is never a player, whichever message comes first.
 - **Older SDK or runtime.** Against SDK 2.2.0 (no `SCO_NET_VERSION_1_1`) the flag code is not compiled. A module built
   against a newer SDK that runs on a runtime with sco.net 1.0 only gets the request for 1.1 refused, takes the 1.0 table,
   never reads past `self_peer` in a table smaller than 72 bytes, and so marks nobody.
@@ -190,10 +193,11 @@ the module behaves as before, apart from the two items marked "any SDK".
   count over 1024, still means no list and no record.
 - **The module's own limit** follows the session: one record fewer than `SCO_NET_SESSION_MAX_PEERS` when the SDK has it
   (51 seats, so 50 records), else one fewer than `SCO_NET_MAX_PEERS` (16, so 15, the old limit).
-- **Ghosts (any SDK).** The budget stays 32 ghosts, drawn and waiting to be removed together. It used to be counted as
-  two for every listed player, which with more than 16 players listed would have left every player without a ghost. It is
-  now counted in the ghosts held: the first 32 are drawn, and a player past that gets one when one goes. The bound is the
-  same; with 15 players or fewer the only difference is that a player who has no ghost yet no longer reserves two places.
+- **Ghosts.** The budget is 32 ghosts, drawn and waiting to be removed together. Built against SDK 2.2.0 it is counted
+  exactly as before, two places for every listed player (15 players at most, so 30). Built against an SDK that has
+  `SCO_NET_SESSION_MAX_PEERS` it is counted in the ghosts held, because up to 50 players are listed and a count by
+  players would leave every one of them without a ghost: the first 32 are drawn, and a player past that gets one when
+  one goes. The bound is 32 either way.
 - **Pose limit.** `relay_wire.h` keeps its own number for the largest pose (`kPoseMaxBytes`, 1008). A `static_assert` in
   `multiplayer.cpp` stops the build if it ever differs from `multiplayer_wire.h`'s `kMaxPose`.
 
