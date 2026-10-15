@@ -25,7 +25,7 @@ Tests added and run on Linux and Windows: the workflow test with the golden byte
 
 The local builds used an SDK packaged from sco-core `82462b0`; `main` now pins SDK 2.2.0, which CI builds against.
 
-Not tested: nothing was run in game. The production game shell refuses Join today (no admission collector), so an in-game join through a relay is not possible yet.
+Not tested: nothing was run in game. sc-offline 0.7.8.1 and later pass the admission gate on their own evidence; this module has not shipped with sc-offline since 0.7.8; nothing here changes admission.
 
 ## Checklist
 
@@ -33,7 +33,7 @@ Not tested: nothing was run in game. The production game shell refuses Join toda
 - [x] PC changes the launcher makes are still listed and undone (the launcher is not touched)
 - [x] Docs and `CHANGELOG.md` updated where players would notice
 
-## Server peer and sessions of more than 16 players (branch run3/server-peer)
+## Server peer and sessions of more than 16 players 
 
 Stacked on `relay-import`. It is the plugin half of two sco-core changes, "Raise the sco.net session limit and the
 private-session cap from 16 to 51" and "Let a sco.net host be a server, not a player (sco.net 1.1)". Details are in
@@ -59,4 +59,4 @@ Open, not done here:
 - The relay-join test (a real sco-relay, a real `sco::net::Core`) hands the module a table without `get_peer_flags`, so
   the flag is exercised only by the workflow test's synthetic table, not through a real network library.
 - Drawing more than 32 players needs a decision on the ghost budget (it is a plugin-side cap, not a sco.net limit).
-- Nothing here changes the join admission step; Host and Join are still refused until the host shell can prove the game is offline.
+- sc-offline 0.7.8.1 and later pass the admission gate on their own evidence; this module has not shipped with sc-offline since 0.7.8; nothing here changes admission.

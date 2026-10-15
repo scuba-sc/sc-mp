@@ -63,11 +63,9 @@ authorize G13 and are never imported into broker policy. Existing launcher
 firewall allowances are not broker admission or a guarantee of reachability.
 Actual interface/firewall behavior still requires owner Windows acceptance.
 
-**Current production-shell blocker:** its G1 inspector still reports live
-session/effective official-network evidence Unknown; it does not certify these
-from launcher flags or offline patch success. G13 therefore refuses in that
-shell until a positively grounded admission collector is provided. No bypass or
-invented evidence was added to make this feature appear live.
+**Admission in the production shell:** sc-offline 0.7.8.1 and later pass the admission gate on their own evidence
+(read from the Windows Firewall rule store and the process TCP table); this module has not shipped with sc-offline since
+0.7.8; nothing here changes admission. No bypass or invented evidence was added to make this feature appear live.
 
 ## Co-presence, not shared simulation
 
@@ -159,8 +157,7 @@ roster has been read. When sco.net marks the host as a server and no roster has 
 
 **Not run in game.** The workflow test, the relay-join test (synthetic game providers on a real
 `sco::net::Core` joining a real sco-relay over loopback UDP) and the Windows build are the only evidence;
-no real game, EAC, admission collector or LAN was involved. The production-shell admission blocker above
-is unchanged: until a positively grounded admission collector exists, that shell refuses Host and Join.
+no real game, EAC, admission collector or LAN was involved. Nothing here changes admission (see above).
 
 ## Servers and sessions of more than 16 players (sco.net 1.1)
 
@@ -288,12 +285,12 @@ as described above. `multiplayer-motion-test --track-tests` runs only these buff
 
 ## Tester cases (all **not run in game**)
 
-The production shell refuses Host and Join until an admission collector exists (above), so every case
-that needs a connection needs a shell that grants admission. Report what `mod.log` says.
+Every case that needs a connection needs a shell that grants admission (sc-offline 0.7.8.1 and later do on their own
+evidence; see above). Report what `mod.log` says.
 
 1. Start the game with the module installed and do nothing: no `[multiplayer]` line, no socket, **Join**
    has not been pressed.
-2. In the production shell (admission Unknown) press **Join** with a sco-relay server's address and
+2. In a shell where admission is Unknown press **Join** with a sco-relay server's address and
    passphrase: the panel says `Join request refused (1)` and `mod.log` has `join request refused (1)`;
    nothing is sent. Same with EAC running.
 3. In a shell that grants admission: **Join**. Expect `join request accepted: waiting for the session (0)`,
