@@ -10,3 +10,16 @@ files; that PR's CHANGELOG and `docs/features.md` hunks belong to sc-offline and
 
 sc-offline's own lineage and third-party notices:
 [THIRD_PARTY_NOTICES.md](https://github.com/scubamount/sc-offline/blob/main/THIRD_PARTY_NOTICES.md).
+
+## Outside contributions
+
+Code from anyone other than the maintainer is recorded here when it lands, under the terms in
+[CONTRIBUTING.md](CONTRIBUTING.md). One row per contribution:
+
+| Contributor (GitHub) | What and where | Source | Terms it came in under | Credit in history |
+| --- | --- | --- | --- | --- |
+| none merged on `main` yet | - | - | - | - |
+
+The `relay-import` branch (see the README) and sc-mp pull request #1 carry work that did not originate
+with the maintainer. When either is merged, its row goes here in the same change, with the contributor named as
+they asked to be.
