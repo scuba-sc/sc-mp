@@ -32,7 +32,7 @@ std::map<std::string,sco_net_on_message> messages;
 std::map<std::string,std::string> db,prior;
 unsigned hostCalls=0,joinCalls=0,leaveCalls=0,spawnCalls=0,removeCalls=0,transformCalls=0,sendCalls=0;
 bool brokerPresent=true,networkActive=false,admitted=true,inTx=false;
-uint32_t state=0;
+uint32_t state=0,memberTotal=2,getPeersCalls=0;
 sco_widget_event_fn panelCallback=nullptr;
 bool maskSeen=false,rememberSeen=false,hostSeen=false,joinSeen=false,panelRemoved=false;
 std::string passInPanel;
@@ -84,7 +84,12 @@ sco_result Leave(sco_plugin*) { ++leaveCalls;networkActive=false;state=0;return 
 sco_result State(sc_private_session_state_v1* out) { if(!admitted) return SCO_UNAVAILABLE;out->state=state;out->peer_count=networkActive?2:0;return SCO_OK; }
 int Active() { return networkActive?1:0; }
 uint64_t Self() { return networkActive?1:0; }
-sco_result GetPeers(sco_net_peer* out,uint32_t* count) { if(*count<2) return SCO_TOO_MANY;out[0]={1,0};out[1]={2,0};*count=networkActive?2:0;return SCO_OK; }
+// Faithful to sco_net.h: up to the capacity are written, *count is the member total, SCO_TOO_MANY when they do not all fit.
+sco_result GetPeers(sco_net_peer* out,uint32_t* count) {
+    ++getPeersCalls;const uint32_t cap=*count,have=networkActive?memberTotal:0;
+    for(uint32_t i=0;i<cap && i<have;++i) out[i]={i+1,0};
+    *count=have;return have>cap?SCO_TOO_MANY:SCO_OK;
+}
 sco_result Name(uint64_t,char* out,uint32_t cap) { std::snprintf(out,cap,"Remote");return SCO_OK; }
 sco_result Send(sco_plugin*,const char*,const void*,uint32_t) { ++sendCalls;return SCO_OK; }
 sco_result Channel(sco_plugin*,const char* id,uint32_t flags,uint32_t max,sco_net_on_message cb,void*) {
@@ -169,6 +174,18 @@ int main(int argc,char** argv) {
     data[0]=99;messages.at("multiplayer.pose")(2,data,static_cast<uint32_t>(len),nullptr);Tick();CHECK(spawnCalls==1);
     len=mpwire::EncodeDespawn(mpwire::kAvatar,mpwire::SessionId(2,mpwire::kAvatar),data,sizeof(data));CHECK(len==16);
     messages.at("multiplayer.despawn")(2,data,static_cast<uint32_t>(len),nullptr);CHECK(removeCalls==1);
+    {   // More than 16 members: the list is read by growing the buffer, bounded at 64 members
+        const auto others=[&](unsigned n){ char want[32];std::snprintf(want,sizeof(want),"; %u other players;",n);return std::strstr(output,want)!=nullptr; };
+        const auto poseFrom=[&](uint64_t id){ messages.at("multiplayer.pose")(id,data,static_cast<uint32_t>(mpwire::EncodePose(pose,data,sizeof(data))),nullptr); };
+        memberTotal=20;getPeersCalls=0;poseFrom(20);
+        CHECK(getPeersCalls==2); // 16 offered, TOO_MANY with 20, then 20 offered
+        commands.at("multiplayer.status").fn(nullptr,0,nullptr,output,sizeof(output));CHECK(others(2));
+        memberTotal=65;getPeersCalls=0;poseFrom(21); // over the cap: no list, no record, one call only
+        CHECK(getPeersCalls==1);commands.at("multiplayer.status").fn(nullptr,0,nullptr,output,sizeof(output));CHECK(others(2));
+        memberTotal=64;getPeersCalls=0;poseFrom(64);CHECK(getPeersCalls==2); // exactly the cap is read
+        commands.at("multiplayer.status").fn(nullptr,0,nullptr,output,sizeof(output));CHECK(others(3));
+        memberTotal=2;
+    }
     CHECK(commands.at("multiplayer.leave").fn(nullptr,0,nullptr,output,sizeof(output))==SCO_OK);CHECK(!networkActive);
     UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(2,SCO_WIDGET_BUTTON);CHECK(joinCalls==1 && passInPanel.empty());
     UI(11,SCO_WIDGET_TOGGLE,nullptr,1);UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic remembered passphrase");UI(3,SCO_WIDGET_BUTTON);UI(1,SCO_WIDGET_BUTTON);
