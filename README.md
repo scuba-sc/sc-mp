@@ -52,4 +52,5 @@ not "verified in game": nothing here has been run in game.
 
 ## Licence
 
-GPL-3.0-only ([LICENSE](LICENSE)). Where it came from: [PROVENANCE.md](PROVENANCE.md).
+GPL-3.0-only ([LICENSE](LICENSE)). Where it came from: [PROVENANCE.md](PROVENANCE.md). How to contribute, and
+where a relay server would live: [CONTRIBUTING.md](CONTRIBUTING.md).
