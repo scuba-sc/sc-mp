@@ -24,6 +24,8 @@ if(MSVC)
   target_compile_options(sc-offline-multiplayer PRIVATE /W4 /WX /permissive-)
 else()
   target_compile_options(sc-offline-multiplayer PRIVATE -Wall -Wextra -Werror)
+  # The source packs statements on one line (`if(x) return;const auto y=...;`); GCC flags that style.
+  target_compile_options(sc-offline-multiplayer PRIVATE -Wno-misleading-indentation)
   if(APPLE)
     target_link_options(sc-offline-multiplayer PRIVATE -Wl,-undefined,error)
   else()
