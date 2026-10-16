@@ -23,8 +23,25 @@ The files keep the paths they had in sc-offline, so history and patches carry ov
 | `plugins/multiplayer/` | the plugin: `multiplayer.cpp`, `multiplayer_wire.h`, `plugin.ini`, `CMakeLists.txt`, and its own `README.md` (protocol, settings, consent) |
 | `tools/multiplayer_workflow_test.cpp` | the module's workflow test |
 
-Building it standalone is not set up yet: in sc-offline it was configured as a subdirectory of
-`plugins/CMakeLists.txt`. A standalone CMake project and CI are the next step.
+## Build
+
+The repo root is a standalone CMake project. It downloads the published SDK archive `sco-sdk-2.3.0.zip`
+from the sco-core `sdk-v2.3.0` release, refuses it unless its SHA-256 matches the pin in
+[cmake/ScoSdk.cmake](cmake/ScoSdk.cmake), and builds against the extracted `include/`. It never reads a
+sibling sco-core checkout.
+
+```
+cmake -S . -B build
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+```
+
+`ctest` runs the module workflow test (`tools/multiplayer_workflow_test.cpp`, synthetic services, no sockets,
+no game) and, on Windows, the SDK's `sco-plugin-check` on the plugin folder. For an offline build, put the
+release asset in a directory and pass `-DSCO_SDK_ARCHIVE_DIR=<dir>`; the hash is still checked. CI:
+[.github/workflows/build.yml](.github/workflows/build.yml) (Windows and Linux). To move to a newer SDK,
+change `SCO_SDK_VERSION` and `SCO_SDK_SHA256` together (from the release `SHA256SUMS`). A green build is
+not "verified in game": nothing here has been run in game.
 
 ## Branches
 
