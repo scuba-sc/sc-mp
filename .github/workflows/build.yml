@@ -1,0 +1,46 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Builds the multiplayer plugin against the PUBLISHED sco-core SDK archive. cmake/ScoSdk.cmake downloads
+# sco-sdk-<version>.zip and refuses to build unless its SHA-256 matches the pin in that file.
+# Nothing here reads a sibling sco-core checkout. A green run is a build and a synthetic test only:
+# it is not "verified in game" (nothing has been run in game).
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            config: Release
+          - os: ubuntu-24.04
+            config: Release
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure (downloads and verifies the SDK archive)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.config }}
+
+      # multiplayer-module-workflow: 81 synthetic-service checks of the module.
+      # multiplayer-plugin-check (Windows only): the published sco-plugin-check on the plugin folder.
+      - name: Test (workflow test + sco-plugin-check)
+        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
