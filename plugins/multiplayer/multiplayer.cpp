@@ -42,6 +42,8 @@ const sc_entities_v1* entities=nullptr;
 const sc_vehicles_v1* vehicles=nullptr;
 const sco_plugin_info info={sizeof(sco_plugin_info),SCO_API_MAJOR,SCO_API_MINOR,"multiplayer","1.0.0","scubamount"};
 namespace rw=sco::relay::wire;
+// A pose from this plugin must fit the relay's near_up / near.<slot> envelope (relay_wire.h), or nearby-only forwarding would drop it.
+static_assert(mpwire::kMaxPose<=rw::kPoseMaxBytes,"a pose from multiplayer_wire.h must fit the relay wire's pose limit");
 enum ChannelIndex : unsigned { kPoseChannel,kSpawnChannel,kDespawnChannel,kRelayChannel,kNearUpChannel,kChannelCount };
 constexpr const char* channels[]={"multiplayer.pose","multiplayer.spawn","multiplayer.despawn","multiplayer.relay","multiplayer.near_up"};
 static_assert(sizeof(channels)/sizeof(channels[0])==kChannelCount,"one name per channel");
