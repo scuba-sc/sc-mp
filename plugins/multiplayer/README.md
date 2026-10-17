@@ -82,9 +82,13 @@ inventory is promised.
 Avatar ghosts use the locally selected NPC archetype; peer avatar classes are
 informational rather than arbitrary remote actor-spawn authority. Ship ghosts
 are bounded, class-syntax-checked and validated by the owning entity provider.
-Only authenticated session members allocate peer records; at most 15 peers and
+Only authenticated session members allocate peer records; at most 63 peers and
 32 active/pending-removal ghosts. Actors use `game.actors.spawn_npc/despawn`,
 ships use `game.entities.spawn/despawn`, and transforms are owned public calls.
+The member list is read with room for 16 entries; when `sco.net` answers `SCO_TOO_MANY`
+with a larger count, the call is repeated with room for that many (at most 3 calls,
+at most 64 members). Any other answer, or a count over 64, means no list and no record.
+With 16 members or fewer nothing changes. Not run in game.
 Streaming/retry/removal tickets are bounded. An ambiguous `alive=0` never erases
 ownership; provider unload cleanup retains any refused removal. There are no
 private NPC-remover, spawner, vehicle-registration or zone-pointer fallbacks.

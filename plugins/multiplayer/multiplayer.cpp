@@ -141,13 +141,29 @@ void Remove(Ghost& g) {
 }
 void Clear() { for(auto& p:peers) { Remove(p.avatar);Remove(p.ship); }peers.clear();RetryCleanup();announced=false;announcedShip[0]=0;shipId=0; }
 Peer* Find(uint64_t id) { for(auto& p:peers) if(p.id==id) return &p;return nullptr; }
+// The session roster. sco.net 1.0 sessions hold at most SCO_NET_MAX_PEERS; a larger one answers SCO_TOO_MANY with the member count,
+// and the call is repeated with room for all of them. Bounded: at most kMaxMembers entries and kMemberTries calls. Any other answer,
+// or a count that does not grow past the room offered or exceeds the cap, is no list at all.
+constexpr uint32_t kMaxMembers=64,kMemberTries=3;
+bool Members(std::vector<sco_net_peer>& out) {
+    if(!METHOD(net,get_peers)) return false;
+    uint32_t room=SCO_NET_MAX_PEERS;
+    for(uint32_t attempt=0;attempt<kMemberTries;++attempt) {
+        out.assign(room,sco_net_peer{});uint32_t count=room;
+        const sco_result r=net->get_peers(out.data(),&count);
+        if(r==SCO_OK) { if(count>room) return false;out.resize(count);return true; }
+        if(r!=SCO_TOO_MANY || count<=room || count>kMaxMembers) return false;
+        room=count;
+    }
+    return false;
+}
 Peer* Add(uint64_t id) {
     if(!id || !METHOD(net,self_peer) || id==net->self_peer() || !Active()) return nullptr;
     if(auto* p=Find(id)) return p;
     // Only authenticated session members get a record. Never trust raw sender IDs.
-    sco_net_peer members[SCO_NET_MAX_PEERS]{};uint32_t count=SCO_NET_MAX_PEERS;
-    if(!METHOD(net,get_peers) || net->get_peers(members,&count)!=SCO_OK || count>SCO_NET_MAX_PEERS || peers.size()>=SCO_NET_MAX_PEERS-1) return nullptr;
-    bool member=false;for(uint32_t i=0;i<count;++i) if(members[i].peer_id==id) member=true;
+    std::vector<sco_net_peer> members;
+    if(!Members(members) || peers.size()>=kMaxMembers-1) return nullptr;
+    bool member=false;for(const auto& m:members) if(m.peer_id==id) member=true;
     if(!member) return nullptr;
     peers.emplace_back();auto& p=peers.back();p.id=id;
     if(!METHOD(net,get_peer_name) || net->get_peer_name(id,p.name,sizeof(p.name))!=SCO_OK) std::snprintf(p.name,sizeof(p.name),"peer %llu",static_cast<unsigned long long>(id));
