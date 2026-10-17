@@ -66,8 +66,14 @@ if(NOT _have)
     list(GET _dl_status 0 _dl_code)
     if(NOT _dl_code EQUAL 0)
       file(REMOVE "${_sco_cs_zip}")
-      message(FATAL_ERROR "sco-core source kit download failed, or its SHA-256 is not the pin "
-                          "${SCO_CORE_SOURCE_SHA256} (hash mismatch): ${_dl_status}; refusing to build it")
+      # EXPECTED_HASH makes file(DOWNLOAD) fail when the bytes are not the pin, and says so in the status. Any other
+      # failure (no network, a TLS error) is a download failure and is reported as one.
+      if(_dl_status MATCHES "HASH mismatch")
+        message(FATAL_ERROR "sco-core source kit ${_sco_cs_zip_name} is not the one pinned: its SHA-256 is not "
+                            "${SCO_CORE_SOURCE_SHA256} (hash mismatch): ${_dl_status}; refusing to build it")
+      endif()
+      message(FATAL_ERROR "sco-core source kit download failed: ${_dl_status}. Check the network, or pass "
+                          "-DSCO_SDK_ARCHIVE_DIR=<folder> with the release assets.")
     endif()
   endif()
   # Whichever way the file arrived, it is checked here, before anything is extracted.

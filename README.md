@@ -40,10 +40,12 @@ ctest --test-dir build -C Release --output-on-failure
 
 `ctest` runs the module workflow test (`tools/multiplayer_workflow_test.cpp`, synthetic services, no sockets,
 no game) and, on Windows, the SDK's `sco-plugin-check` on the plugin folder. On Linux the same commands also build
-the relay server and run its four tests (below). For an offline build, put the release asset in a directory and
-pass `-DSCO_SDK_ARCHIVE_DIR=<dir>`; the hash is still checked. CI:
+the relay server and run its four tests (below). For an offline build, put the release assets in a directory and
+pass `-DSCO_SDK_ARCHIVE_DIR=<dir>`; the hash is still checked. The directory needs `sco-sdk-<version>.zip`, and on
+Linux also `sco-sdk-core-source-<version>.zip` (the relay's kit), or pass `-DSC_MP_BUILD_RELAY=OFF`. CI:
 [.github/workflows/build.yml](.github/workflows/build.yml) (Windows and Linux). To move to a newer SDK,
-change `SCO_SDK_VERSION` and `SCO_SDK_SHA256` together (from the release `SHA256SUMS`). A green build is
+change `SCO_SDK_VERSION` and `SCO_SDK_SHA256` together (from the release `SHA256SUMS`), and on Linux
+`SCO_CORE_SOURCE_SHA256` in `cmake/ScoCoreSource.cmake` with them. A green build is
 not "verified in game": nothing here has been run in game.
 
 ## Relay support
