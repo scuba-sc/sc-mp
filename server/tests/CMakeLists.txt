@@ -40,20 +40,27 @@ add_test(NAME net_boundary_checks
 set_tests_properties(net_boundary_checks PROPERTIES TIMEOUT 600)
 
 # What the build looks like, written when CMake generates, for server/tools/check-no-game-code.sh: where the
-# libraries and the program are, what each links, and the kit's folder. It reads these instead of a generator's
-# private files, so it works with any CMake generator.
+# libraries and the program are, what each links and passes on to what links it (INTERFACE_LINK_LIBRARIES, which
+# reaches the program's link line through the target that lists it), the file that holds the program's link line
+# where the generator writes one, and the kit's folder. The script reads these, so most of it works with any CMake
+# generator; the real link line is read only where there is a file for it (Makefile generators).
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/relay-build-facts.txt" CONTENT
 "cache=${CMAKE_BINARY_DIR}/CMakeCache.txt
 kit=${SCO_CORE_SOURCE_ROOT}
 program=$<TARGET_FILE:sco-relay>
 program_sources=$<TARGET_PROPERTY:sco-relay,SOURCES>
 program_links=$<TARGET_PROPERTY:sco-relay,LINK_LIBRARIES>
+program_interface_links=$<TARGET_PROPERTY:sco-relay,INTERFACE_LINK_LIBRARIES>
+link_file=$<TARGET_PROPERTY:sco-relay,BINARY_DIR>/CMakeFiles/sco-relay.dir/link.txt
 server_library=$<TARGET_FILE:sco_relay_server>
 server_links=$<TARGET_PROPERTY:sco_relay_server,LINK_LIBRARIES>
+server_interface_links=$<TARGET_PROPERTY:sco_relay_server,INTERFACE_LINK_LIBRARIES>
 net_library=$<TARGET_FILE:sco_net>
 net_links=$<TARGET_PROPERTY:sco_net,LINK_LIBRARIES>
+net_interface_links=$<TARGET_PROPERTY:sco_net,INTERFACE_LINK_LIBRARIES>
 sockets_library=$<TARGET_FILE:sco_relay_sockets>
 sockets_links=$<TARGET_PROPERTY:sco_relay_sockets,LINK_LIBRARIES>
+sockets_interface_links=$<TARGET_PROPERTY:sco_relay_sockets,INTERFACE_LINK_LIBRARIES>
 ")
 add_test(NAME relay_no_game_code
   COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/../tools/check-no-game-code.sh"

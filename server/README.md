@@ -54,7 +54,8 @@ unless its SHA-256 matches `SCO_CORE_SOURCE_SHA256` in `cmake/ScoCoreSource.cmak
 and adds it with `add_subdirectory` (`EXCLUDE_FROM_ALL`, the Star Citizen game pack off, the kit's own tests off).
 Only the kit's network library is built, plus the kit's two socket files, `src/net/udp_posix.cpp` and
 `src/net/scope.cpp`, compiled as they are. For an offline build, put the release assets in a folder and pass
-`-DSCO_SDK_ARCHIVE_DIR=<folder>`; the hash is still checked. To move to a newer release, change `SCO_SDK_VERSION`,
+`-DSCO_SDK_ARCHIVE_DIR=<folder>` (it needs `sco-sdk-<version>.zip` and `sco-sdk-core-source-<version>.zip`); the hash
+is still checked. To move to a newer release, change `SCO_SDK_VERSION`,
 `SCO_SDK_SHA256` and `SCO_CORE_SOURCE_SHA256` together (from the release `SHA256SUMS`), then read
 [The sco-core boundary](#the-sco-core-boundary).
 
@@ -102,13 +103,17 @@ keep stable. So the server touches the library in one place only.
   `server/*.cpp`, `server/*.h` and `cmake/ScoCoreSource.cmake`. It fails when any file but the boundary file
   includes one of the library's headers (the `sco/net/` ones or `sc_net.h`) or writes `sco::net::`, even in a
   comment; when an `#include` is not one of our own headers, `plugins/multiplayer/relay_wire.h` (the only file
-  outside `server/` that is allowed), or a standard or POSIX header; when the kit was not configured with
-  `SCO_GAME_SC=OFF`; and when the program links anything but the server library, the kit's network library and the
-  two socket files, or those libraries hold other objects.
+  outside `server/` that is allowed), or a standard or POSIX header (a name with `..` in it is never allowed, even
+  `server/../...`); when the kit was not configured with `SCO_GAME_SC=OFF`; and when the program links anything
+  but the server library, the kit's network library and the two socket files, or those libraries hold other objects.
+  The link is read twice: from what CMake declares for each target, including the libraries a target passes on to
+  whatever links it (`INTERFACE_LINK_LIBRARIES`), and from the program's real link line where the generator writes
+  one (`link.txt` with Makefiles).
 - `server/tools/check-net-boundary.sh <extracted kit>` needs no compiler. It checks the declarations the boundary
   uses, the constants, the lines of behaviour no compiler can see (what `Core` relays and to whom, who checks the seat
   limit, the private ranges, which interface a socket binds), and the blob id of each kit file the server compiles
-  or includes (14 files, line endings ignored). The `static_assert`s in `server/net_boundary.cpp` say the same at
+  or includes (15 files, line endings ignored: the 14 the program compiles or includes, and `tests/net_mem.h`,
+  which only `test_server` includes). The `static_assert`s in `server/net_boundary.cpp` say the same at
   build time.
 - `server/tests/test_net_boundary_checks.sh` (the test `net_boundary_checks`) proves that those checks fire, on altered
   copies of the kit's files, and that a changed session limit or `Core::Host` does not compile.

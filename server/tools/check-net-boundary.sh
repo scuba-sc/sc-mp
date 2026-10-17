@@ -235,8 +235,9 @@ behaviour $udp_cpp 'a datagram longer than the buffer is reported as one byte to
 # ---- 3. every file the boundary reads, unchanged since it was checked ---------------------------------
 # Blob ids of the files in sco-sdk-core-source-2.3.0.zip. They are the same ids as at sco-core 686187c (SDK 2.2.0,
 # the pin of the standalone relay this server comes from): none of these files changed in the move to SDK 2.3.0.
-# The last four files are not read by the checks above, but the relay compiles or includes them too (they sit
-# under the library's core and its wire), so a change in them is noticed the same way.
+# The last five files are not read by the checks above, but the relay compiles or includes them too (they sit
+# under the library's core and its wire), so a change in them is noticed the same way. The fifth is the kit's
+# tests/net_mem.h, the in-memory network that test_server includes (the program never does).
 
 file_pin include/sc_net.h 452014ac6fbbc754c6a052cb3779c3d0df5e7b47
 file_pin include/sco/net/core.h 0928dfdeb502dd4086efc74bc82ebb26a82704fb
@@ -252,6 +253,7 @@ file_pin include/sco/net/reliable.h 1ed5158157831585a24c296d09519bea5697699a
 file_pin include/sco/net/sha2.h 9f68ac185abaf685ef10c29faf6d0e549ccf4cbc
 file_pin src/net/reliable.cpp 831e75bfc2d56e24c9051008b770a3d245a122a2
 file_pin src/net/sha2.c 018f0007dd26f3f7d3fbd144aee8920431e082cf
+file_pin tests/net_mem.h 7ebff672cfd3802f87b7524c4cbb279fa5f26f68
 
 [ "$mode" = list ] && exit 0
 

@@ -2,17 +2,20 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # What this is: proves the relay server holds no game code. From the build: the sco-core source kit was configured
 # without its game pack, the program links only our server library, the kit's network library and the kit's two
-# socket files, and those libraries hold only the objects they should. From the sources: only
+# socket files (as CMake declares it, with the libraries each target passes on, and as the program's real link line
+# says where the generator writes one), and those libraries hold only the objects they should. From the sources: only
 # server/net_boundary.cpp names the kit's network library (includes a sco/net header or sc_net.h, or writes
 # sco::net::, even in a comment), and every #include in server/ is one of our own headers, the shared relay wire
-# header, or a standard or POSIX header (net_boundary.cpp also the library's). Exit 0 means every check passed.
+# header, or a standard or POSIX header (net_boundary.cpp also the library's). An include that climbs out of its
+# folder with ".." is never admitted, whatever it points at. Exit 0 means every check passed.
 #
 # Only the production set is read: server/*.cpp, server/*.h and cmake/ScoCoreSource.cmake. Not server/tests,
 # server/tools or any document.
 #
 # Usage: sh server/tools/check-no-game-code.sh <repository root> <build facts file>
 # The facts file is written by CMake (server/tests/CMakeLists.txt) when it generates the build: where the program
-# and the libraries are, what each links, and the extracted kit. CTest runs this script as relay_no_game_code.
+# and the libraries are, what each links and passes on to what links it, the program's link line file, and the
+# extracted kit. CTest runs this script as relay_no_game_code.
 set -u
 
 root=${1:-}
@@ -49,12 +52,36 @@ else
     fail "SCO_BUILD_TESTS is not OFF in the build's CMakeCache.txt ($cache)"
 fi
 
-# What each target links, as CMake knows it. Nothing else may end up on the program's link line.
-if [ "$(fact program_sources)" = "main.cpp" ] && [ "$(fact program_links)" = "sco_relay_server" ] &&
-   [ "$(fact server_links)" = "sco_net;sco_relay_sockets" ] && [ -z "$(fact net_links)" ] && [ -z "$(fact sockets_links)" ]; then
-    ok "the program links only libsco_relay_server, libsco_net and libsco_relay_sockets, and its own object is main.cpp.o"
+# What each target links, as CMake knows it, and what each passes on to whatever links it (the INTERFACE libraries,
+# which reach the program's link line through the target that lists them). Nothing else may end up on that line.
+if [ "$(fact program_sources)" = "main.cpp" ] && [ "$(fact program_links)" = "sco_relay_server" ] && [ -z "$(fact program_interface_links)" ] &&
+   [ "$(fact server_links)" = "sco_net;sco_relay_sockets" ] && [ "$(fact server_interface_links)" = "sco_net;sco_relay_sockets" ] &&
+   [ -z "$(fact net_links)" ] && [ -z "$(fact net_interface_links)" ] &&
+   [ -z "$(fact sockets_links)" ] && [ -z "$(fact sockets_interface_links)" ]; then
+    ok "CMake declares that the program links only libsco_relay_server, libsco_net and libsco_relay_sockets, and its own object is main.cpp.o"
 else
-    fail "unexpected program, sources or links: program sources '$(fact program_sources)', program links '$(fact program_links)', server library links '$(fact server_links)', network library links '$(fact net_links)', socket library links '$(fact sockets_links)'"
+    fail "unexpected program, sources or links: program sources '$(fact program_sources)', program links '$(fact program_links)' (passes on '$(fact program_interface_links)'), server library links '$(fact server_links)' (passes on '$(fact server_interface_links)'), network library links '$(fact net_links)' (passes on '$(fact net_interface_links)'), socket library links '$(fact sockets_links)' (passes on '$(fact sockets_interface_links)')"
+fi
+
+# The program's real link line, where the generator writes one (Makefile generators: link.txt). CMake's own words
+# for a library end in .a or .so, or start with -l; the objects end in .o. CMake quotes some words of the line.
+link_file=$(fact link_file)
+if [ -n "$link_file" ] && [ -f "$link_file" ]; then
+    words=$(tr -d '"' < "$link_file" | tr ' ' '\n')
+    libraries=$(echo "$words" | grep -E '\.(a|so)$|^-l' | sed 's|.*/||' | sort -u | tr '\n' ' ')
+    objects=$(echo "$words" | grep -E '\.o$' | tr '\n' ' ')
+    if [ "$libraries" = "libsco_net.a libsco_relay_server.a libsco_relay_sockets.a " ]; then
+        ok "the program's link line names only libsco_relay_server, libsco_net and libsco_relay_sockets"
+    else
+        fail "unexpected libraries on the link line: $libraries"
+    fi
+    if [ "$objects" = "CMakeFiles/sco-relay.dir/main.cpp.o " ]; then
+        ok "the program's own object on the link line is main.cpp.o and nothing else"
+    else
+        fail "unexpected objects on the link line: '$objects'. The whole link line is: $(cat "$link_file")"
+    fi
+else
+    echo "note: this generator writes no link line file (${link_file:-none named}); the link line was checked from CMake's declared libraries only"
 fi
 
 members() {   # <archive>: the objects inside it, sorted, on one line
@@ -115,12 +142,16 @@ else
 fi
 
 # Every include, file by file, so the message can name the file. The library's own headers are allowed in the
-# boundary file alone. Outside server/ only the relay wire header, shared with the plugin, is allowed.
+# boundary file alone. Outside server/ only the relay wire header, shared with the plugin, is allowed. A name with
+# ".." in it is refused first: "server/../plugins/multiplayer/motion.h" starts like one of ours and leaves server/.
 foreign=$(for file in "$root"/server/*.h "$root"/server/*.cpp; do
     grep -hE '^[[:space:]]*#[[:space:]]*include' "$file" |
     sed -E 's/^[[:space:]]*#[[:space:]]*include[[:space:]]*[<"]([^>"]*)[>"].*/\1/' |
     sort -u |
     while read -r name; do
+        case "$name" in
+            *..*) echo "$(basename "$file"): $name"; continue ;;
+        esac
         case "$name" in
             sco/net/*|sc_net.h) [ "$(basename "$file")" = net_boundary.cpp ] && continue ;;
             server/*) [ -f "$root/$name" ] && continue ;;
