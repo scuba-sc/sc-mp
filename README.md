@@ -10,7 +10,8 @@ own pace; sc-offline does not ship it.
 ## Status
 
 Development code. **It has not been run in game.** The plugin builds against the sco-core SDK's public
-headers only (SDK 2.2.0 or newer, which ships `sc_private_session.h`), and joining a session needs the
+headers only (pinned: SDK 2.4.0 release candidate 1; the headers it needs, such as `sc_private_session.h`, have
+shipped since SDK 2.2.0), and joining a session needs the
 host to positively admit it as offline. Treat everything here as unverified until a release says
 otherwise.
 
@@ -27,8 +28,9 @@ The files keep the paths they had in sc-offline, so history and patches carry ov
 
 ## Build
 
-The repo root is a standalone CMake project. It downloads the published SDK archive `sco-sdk-2.3.0.zip`
-from the sco-core `sdk-v2.3.0` release, refuses it unless its SHA-256 matches the pin in
+The repo root is a standalone CMake project. It downloads the published SDK archive `sco-sdk-2.4.0.zip`
+from the sco-core pre-release [`sdk-v2.4.0-rc.1`](https://github.com/scubamount/sco-core/releases/tag/sdk-v2.4.0-rc.1) (SDK 2.4.0, release
+candidate 1; the final `sdk-v2.4.0` will follow), refuses it unless its SHA-256 matches the pin in
 [cmake/ScoSdk.cmake](cmake/ScoSdk.cmake), and builds against the extracted `include/`. It never reads a
 sibling sco-core checkout.
 
@@ -44,9 +46,9 @@ the relay server and run its four tests (below). For an offline build, put the r
 pass `-DSCO_SDK_ARCHIVE_DIR=<dir>`; the hash is still checked. The directory needs `sco-sdk-<version>.zip`, and on
 Linux also `sco-sdk-core-source-<version>.zip` (the relay's kit), or pass `-DSC_MP_BUILD_RELAY=OFF`. CI:
 [.github/workflows/build.yml](.github/workflows/build.yml) (Windows and Linux). To move to a newer SDK,
-change `SCO_SDK_VERSION` and `SCO_SDK_SHA256` together (from the release `SHA256SUMS`), and on Linux
-`SCO_CORE_SOURCE_SHA256` in `cmake/ScoCoreSource.cmake` with them. A green build is
-not "verified in game": nothing here has been run in game.
+change `SCO_SDK_VERSION`, `SCO_SDK_RELEASE_TAG` and `SCO_SDK_SHA256` together (from the release `SHA256SUMS`), and
+on Linux `SCO_CORE_SOURCE_SHA256` in `cmake/ScoCoreSource.cmake` with them. A green build is
+not "verified in game": nothing here has been run in game, and nothing new in SDK 2.4.0 has been run in game either.
 
 ## Relay support
 

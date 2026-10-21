@@ -4,7 +4,8 @@
 # and it reads the SDK version and the download folder from there, so include ScoSdk.cmake first.
 #
 #   SCO_CORE_SOURCE_SHA256   the pin: SHA-256 of sco-sdk-core-source-<SCO_SDK_VERSION>.zip, from the SHA256SUMS of
-#                            the same release as the SDK archive. Bump it together with SCO_SDK_VERSION.
+#                            the same release as the SDK archive (SCO_SDK_RELEASE_TAG). Bump it together with
+#                            SCO_SDK_VERSION and SCO_SDK_RELEASE_TAG.
 #   SCO_SDK_ARCHIVE_DIR      (ScoSdk.cmake) a local copy of the release assets. The kit is taken from there instead
 #                            of downloaded. Either way the archive must match the pin or configure stops, before
 #                            anything is extracted.
@@ -22,14 +23,14 @@ if(NOT DEFINED SCO_SDK_VERSION)
                       "configure with SC_MP_FETCH_SDK=ON, or leave SC_MP_BUILD_RELAY off")
 endif()
 
-# From the release SHA256SUMS, line for sco-sdk-core-source-<version>.zip (sdk-v2.3.0 release).
-set(SCO_CORE_SOURCE_SHA256 "2115df435cd0808062fc8aa16467547e8a3dccb17bcabb791b2cf3d0251912ef"
+# From the release SHA256SUMS, line for sco-sdk-core-source-<version>.zip (sdk-v2.4.0-rc.1 release).
+set(SCO_CORE_SOURCE_SHA256 "f2f7c35591ed96090240466910e3db408953a9a4f6e0a16a36da83bc2a34ee62"
     CACHE STRING "SHA-256 of sco-sdk-core-source-<version>.zip")
 
 set(_sco_cs_name "sco-sdk-core-source-${SCO_SDK_VERSION}")
 set(_sco_cs_zip_name "${_sco_cs_name}.zip")
 set(_sco_cs_url
-    "https://github.com/scubamount/sco-core/releases/download/sdk-v${SCO_SDK_VERSION}/${_sco_cs_zip_name}")
+    "https://github.com/scubamount/sco-core/releases/download/${SCO_SDK_RELEASE_TAG}/${_sco_cs_zip_name}")
 set(_sco_cs_dl_dir "${CMAKE_BINARY_DIR}/_sdk")
 set(_sco_cs_zip "${_sco_cs_dl_dir}/${_sco_cs_zip_name}")
 set(_sco_cs_src_parent "${_sco_cs_dl_dir}/core-source-${SCO_CORE_SOURCE_SHA256}")

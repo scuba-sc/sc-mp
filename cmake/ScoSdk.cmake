@@ -1,6 +1,8 @@
 # Fetches the published sco-core SDK archive, verifies its SHA-256 and extracts it under the build tree.
 #
-#   SCO_SDK_VERSION       SDK release consumed by sc-mp (release tag sdk-v<version>)
+#   SCO_SDK_VERSION       SDK version consumed by sc-mp (the archive is sco-sdk-<version>.zip)
+#   SCO_SDK_RELEASE_TAG   the sco-core release that holds the archive. SDK 2.4.0 is published as release
+#                         candidate 1, tag sdk-v2.4.0-rc.1; the final sdk-v2.4.0 has not been published yet
 #   SCO_SDK_ARCHIVE_DIR   directory holding a local copy of the release assets (sco-sdk-<version>.zip);
 #                         when set, the archive is taken from there instead of downloaded. Either way
 #                         the archive must match SCO_SDK_SHA256 or configure fails.
@@ -8,16 +10,18 @@
 # Sets SCO_SDK_ROOT (the extracted kit) and SCO_SDK_INCLUDE_DIR (its include/). The kit sources are
 # never copied into this repository, and no sibling sco-core checkout is read.
 
-set(SCO_SDK_VERSION "2.3.0" CACHE STRING "sco-core SDK release consumed by sc-mp")
-set(SCO_SDK_ARCHIVE_DIR "" CACHE PATH "Local directory with the sdk-v<version> release assets (optional)")
-# From the release SHA256SUMS, line for sco-sdk-<version>.zip. Bump together with SCO_SDK_VERSION.
-set(SCO_SDK_SHA256 "cc5e0678bd0a701f39ca11ed258f0a1e0a90cf7b1822cc6d3cb8dda0afd3a648"
+set(SCO_SDK_VERSION "2.4.0" CACHE STRING "sco-core SDK version consumed by sc-mp")
+set(SCO_SDK_RELEASE_TAG "sdk-v2.4.0-rc.1" CACHE STRING "sco-core release tag that holds the SDK archives")
+set(SCO_SDK_ARCHIVE_DIR "" CACHE PATH "Local directory with the release assets of SCO_SDK_RELEASE_TAG (optional)")
+# From the release SHA256SUMS, line for sco-sdk-<version>.zip (sdk-v2.4.0-rc.1 release). Bump together with
+# SCO_SDK_VERSION and SCO_SDK_RELEASE_TAG.
+set(SCO_SDK_SHA256 "124751534277b89f0516af1897919c3485923811596e159a1f683bb80b1c243b"
     CACHE STRING "SHA-256 of sco-sdk-<version>.zip")
 
 set(_sco_sdk_name "sco-sdk-${SCO_SDK_VERSION}")
 set(_sco_sdk_zip_name "${_sco_sdk_name}.zip")
 set(_sco_sdk_url
-    "https://github.com/scubamount/sco-core/releases/download/sdk-v${SCO_SDK_VERSION}/${_sco_sdk_zip_name}")
+    "https://github.com/scubamount/sco-core/releases/download/${SCO_SDK_RELEASE_TAG}/${_sco_sdk_zip_name}")
 set(_sco_sdk_dl_dir "${CMAKE_BINARY_DIR}/_sdk")
 set(_sco_sdk_zip "${_sco_sdk_dl_dir}/${_sco_sdk_zip_name}")
 set(_sco_sdk_src_parent "${_sco_sdk_dl_dir}/src-${SCO_SDK_SHA256}")

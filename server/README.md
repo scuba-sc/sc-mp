@@ -49,13 +49,14 @@ ctest --test-dir build -C Release --output-on-failure
 
 The root build turns the relay on by itself on Linux (`SC_MP_BUILD_RELAY`, default ON there and OFF elsewhere;
 `-DSC_MP_BUILD_RELAY=OFF` leaves it out). It then downloads `sco-sdk-core-source-<version>.zip` from the same
-sco-core release as the SDK archive (`SCO_SDK_VERSION` in [cmake/ScoSdk.cmake](../cmake/ScoSdk.cmake)), refuses it
+sco-core release as the SDK archive (`SCO_SDK_VERSION` and `SCO_SDK_RELEASE_TAG` in
+[cmake/ScoSdk.cmake](../cmake/ScoSdk.cmake); today SDK 2.4.0 release candidate 1, `sdk-v2.4.0-rc.1`), refuses it
 unless its SHA-256 matches `SCO_CORE_SOURCE_SHA256` in `cmake/ScoCoreSource.cmake`, unpacks it under the build folder
 and adds it with `add_subdirectory` (`EXCLUDE_FROM_ALL`, the Star Citizen game pack off, the kit's own tests off).
 Only the kit's network library is built, plus the kit's two socket files, `src/net/udp_posix.cpp` and
 `src/net/scope.cpp`, compiled as they are. For an offline build, put the release assets in a folder and pass
 `-DSCO_SDK_ARCHIVE_DIR=<folder>` (it needs `sco-sdk-<version>.zip` and `sco-sdk-core-source-<version>.zip`); the hash
-is still checked. To move to a newer release, change `SCO_SDK_VERSION`,
+is still checked. To move to a newer release, change `SCO_SDK_VERSION`, `SCO_SDK_RELEASE_TAG`,
 `SCO_SDK_SHA256` and `SCO_CORE_SOURCE_SHA256` together (from the release `SHA256SUMS`), then read
 [The sco-core boundary](#the-sco-core-boundary).
 
@@ -126,7 +127,7 @@ When `check-net-boundary.sh` or the build fails after a kit change, do this in o
 2. Read the change in sco-core between the two releases, for the file it names.
 3. Change `server/net_boundary.cpp` if the server needs it. Nothing else in `server/` should need to change.
 4. Change the matching line or blob id in `server/tools/check-net-boundary.sh` in the same commit that moves
-   `SCO_SDK_VERSION` and the two hashes.
+   `SCO_SDK_VERSION`, `SCO_SDK_RELEASE_TAG` and the two hashes.
 5. Run `ctest`. Only when it passes, move on.
 
 ## What is not here

@@ -264,15 +264,18 @@ that needs a connection needs a shell that grants admission. Report what `mod.lo
 
 ## Build/install and evidence boundary
 
-The pinned published **sdk-v2.2.0 contains G13, G3 and retained widgets**
-(`sc_private_session.h`, `sc_game_spatial.h`, `sco_widgets.h`); sdk-v2.0.0 did
-not. The CI release job does not yet stage multiplayer. The external target
-refuses a missing header and never adds a host include root. An isolated local
-compile uses the checksum-verified published `sco-sdk-2.2.0.zip`:
+The pinned SDK is **2.4.0 release candidate 1** (pre-release
+[`sdk-v2.4.0-rc.1`](https://github.com/scubamount/sco-core/releases/tag/sdk-v2.4.0-rc.1); the final
+`sdk-v2.4.0` will follow). It **contains G13, G3 and retained widgets**
+(`sc_private_session.h`, `sc_game_spatial.h`, `sco_widgets.h`), as every SDK
+since 2.2.0 has; sdk-v2.0.0 did not. The CI release job does not yet stage
+multiplayer. The external target refuses a missing header and never adds a host
+include root. An isolated local compile uses the checksum-verified published
+`sco-sdk-2.4.0.zip` from that pre-release (SHA-256 in `cmake/ScoSdk.cmake`):
 
 ```
 cmake -S plugins/multiplayer -B build-multiplayer -G Ninja \
-  -DSCO_SDK_INCLUDE_DIR=/path/to/extracted/sco-sdk-2.2.0/include \
+  -DSCO_SDK_INCLUDE_DIR=/path/to/extracted/sco-sdk-2.4.0/include \
   -DSCO_WORKFLOW_TESTS=ON
 cmake --build build-multiplayer --target multiplayer-module-test
 ctest --test-dir build-multiplayer -R '^multiplayer-module-workflow$' -V
