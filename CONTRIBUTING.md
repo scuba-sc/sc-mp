@@ -1,10 +1,10 @@
 # Contributing to sc-mp
 
-sc-mp is the optional co-presence `multiplayer` plugin for [sc-offline](https://github.com/scubamount/sc-offline),
+sc-mp is the optional co-presence `multiplayer` plugin for [sc-offline](https://github.com/scuba-sc/sc-offline),
 and the place where a player-run relay server for it would live. Read [README.md](README.md) first.
 sc-mp consumes the published sco-core SDK only, and sco-core's and sc-offline's contribution rules apply
-here too: [sco-core CONTRIBUTING](https://github.com/scubamount/sco-core/blob/main/CONTRIBUTING.md),
-[sc-offline CONTRIBUTING](https://github.com/scubamount/sc-offline/blob/main/CONTRIBUTING.md).
+here too: [sco-core CONTRIBUTING](https://github.com/scuba-sc/sco-core/blob/main/CONTRIBUTING.md),
+[sc-offline CONTRIBUTING](https://github.com/scuba-sc/sc-offline/blob/main/CONTRIBUTING.md).
 
 ## Terms of contribution
 
@@ -15,7 +15,7 @@ From sco-core's CONTRIBUTING, section "License":
 
 > By opening a pull request you agree your contribution is licensed under GPL-3.0-only, and you confirm you
 > wrote it or have the right to contribute it on those terms; answer the questions in the pull request template
-> ([IP policy](https://github.com/scubamount/sco-core/blob/main/IP_POLICY.md)).
+> ([IP policy](https://github.com/scuba-sc/sco-core/blob/main/IP_POLICY.md)).
 
 From sc-offline's CONTRIBUTING, section "License":
 
@@ -23,7 +23,7 @@ From sc-offline's CONTRIBUTING, section "License":
 
 sc-mp's own licence is GPL-3.0-only ([LICENSE](LICENSE)). The three questions that sco-core's IP policy asks of
 every pull request (source, rights, game material) are in
-[sco-core IP_POLICY.md, "Contributions"](https://github.com/scubamount/sco-core/blob/main/IP_POLICY.md).
+[sco-core IP_POLICY.md, "Contributions"](https://github.com/scuba-sc/sco-core/blob/main/IP_POLICY.md).
 Put the answers in the pull request description.
 
 ## Outside contributors are recorded
@@ -52,13 +52,13 @@ a sibling sco-core checkout and never copies SDK sources into this repository.
    list.
 2. **The LAN rule, through `ScopedTransport`.** The relay's socket must sit behind a `ScopedTransport`
    (`sco/net/scope.h`) passed to `Core`, with the default `Scope` (the LAN rule) unless the operator has named
-   wider ranges. Per sco-core's [net-wire.md, "Headless hosts built from `core-source`"](https://github.com/scubamount/sco-core/blob/main/docs/net-wire.md):
+   wider ranges. Per sco-core's [net-wire.md, "Headless hosts built from `core-source`"](https://github.com/scuba-sc/sco-core/blob/main/docs/net-wire.md):
    `Core` takes any `Transport` and applies no address rule of its own, and `udp::Socket::Open(port, false, ...)`
    binds every IPv4 interface, so a host composed without `ScopedTransport` accepts datagrams from, and sends
    to, any address, including public ones. Nothing in the kernel enforces this: it is a rule for the program that
    composes `Core`.
 3. **No unauthenticated remote commands between peers.** Traffic is authenticated but plaintext
-   ([net-wire.md, "Known limits"](https://github.com/scubamount/sco-core/blob/main/docs/net-wire.md)); players
+   ([net-wire.md, "Known limits"](https://github.com/scuba-sc/sco-core/blob/main/docs/net-wire.md)); players
    use a VPN for confidentiality.
 4. **Public SDK surface only.** Nothing from outside the published SDK archive and its documented headers.
 5. **A relay is never a player.** Its roster message (`multiplayer.relay`) says so; the plugin does not list it

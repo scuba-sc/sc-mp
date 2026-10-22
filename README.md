@@ -1,6 +1,6 @@
 # sc-mp
 
-Private co-presence for [sc-offline](https://github.com/scubamount/sc-offline): an optional
+Private co-presence for [sc-offline](https://github.com/scuba-sc/sc-offline): an optional
 `multiplayer` plugin that lets players who all run sc-offline see each other as ghosts in their own
 offline games, over a LAN or VPN.
 
@@ -29,7 +29,7 @@ The files keep the paths they had in sc-offline, so history and patches carry ov
 ## Build
 
 The repo root is a standalone CMake project. It downloads the published SDK archive `sco-sdk-2.4.0.zip`
-from the sco-core pre-release [`sdk-v2.4.0-rc.1`](https://github.com/scubamount/sco-core/releases/tag/sdk-v2.4.0-rc.1) (SDK 2.4.0, release
+from the sco-core pre-release [`sdk-v2.4.0-rc.1`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.1) (SDK 2.4.0, release
 candidate 1; the final `sdk-v2.4.0` will follow), refuses it unless its SHA-256 matches the pin in
 [cmake/ScoSdk.cmake](cmake/ScoSdk.cmake), and builds against the extracted `include/`. It never reads a
 sibling sco-core checkout.

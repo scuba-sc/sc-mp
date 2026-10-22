@@ -10,7 +10,7 @@ The `relay-import` branch adds sc-offline PR #133 (commit `97b0b7a`), restricted
 files; that PR's CHANGELOG and `docs/features.md` hunks belong to sc-offline and were left out.
 
 sc-offline's own lineage and third-party notices:
-[THIRD_PARTY_NOTICES.md](https://github.com/scubamount/sc-offline/blob/main/THIRD_PARTY_NOTICES.md).
+[THIRD_PARTY_NOTICES.md](https://github.com/scuba-sc/sc-offline/blob/main/THIRD_PARTY_NOTICES.md).
 
 ## Outside contributions
 

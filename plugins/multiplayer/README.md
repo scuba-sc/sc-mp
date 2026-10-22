@@ -265,7 +265,7 @@ that needs a connection needs a shell that grants admission. Report what `mod.lo
 ## Build/install and evidence boundary
 
 The pinned SDK is **2.4.0 release candidate 1** (pre-release
-[`sdk-v2.4.0-rc.1`](https://github.com/scubamount/sco-core/releases/tag/sdk-v2.4.0-rc.1); the final
+[`sdk-v2.4.0-rc.1`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.1); the final
 `sdk-v2.4.0` will follow). It **contains G13, G3 and retained widgets**
 (`sc_private_session.h`, `sc_game_spatial.h`, `sco_widgets.h`), as every SDK
 since 2.2.0 has; sdk-v2.0.0 did not. The CI release job does not yet stage
