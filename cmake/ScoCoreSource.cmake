@@ -30,7 +30,7 @@ set(SCO_CORE_SOURCE_SHA256 "f2f7c35591ed96090240466910e3db408953a9a4f6e0a16a36da
 set(_sco_cs_name "sco-sdk-core-source-${SCO_SDK_VERSION}")
 set(_sco_cs_zip_name "${_sco_cs_name}.zip")
 set(_sco_cs_url
-    "https://github.com/scubamount/sco-core/releases/download/${SCO_SDK_RELEASE_TAG}/${_sco_cs_zip_name}")
+    "https://github.com/scuba-sc/sco-core/releases/download/${SCO_SDK_RELEASE_TAG}/${_sco_cs_zip_name}")
 set(_sco_cs_dl_dir "${CMAKE_BINARY_DIR}/_sdk")
 set(_sco_cs_zip "${_sco_cs_dl_dir}/${_sco_cs_zip_name}")
 set(_sco_cs_src_parent "${_sco_cs_dl_dir}/core-source-${SCO_CORE_SOURCE_SHA256}")
