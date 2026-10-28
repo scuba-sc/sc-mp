@@ -352,6 +352,23 @@ int main(int argc,char** argv) {
     CHECK(messages.count("multiplayer.near.1")==0 && panelRows.empty() && StatusText().find("via relay")==std::string::npos);
     unload();
     Reset();refuseProtocol=true;CHECK(load(&api,owner)!=SCO_OK);CHECK(messages.empty() && events.empty());refuseProtocol=false;
+    Reset();net.register_channel=nullptr;CHECK(load(&api,owner)==SCO_OK);CHECK(messages.empty());
+    { const unsigned oldHosts=hostCalls,oldJoins=joinCalls;
+      UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(1,SCO_WIDGET_BUTTON);
+      UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(2,SCO_WIDGET_BUTTON);
+      CHECK(hostCalls==oldHosts && joinCalls==oldJoins && !networkActive);
+      CHECK(panelReply.find("protocol network service unavailable")!=std::string::npos);
+      CHECK(panelStatus.find("protocol unavailable")!=std::string::npos && StatusText().find("protocol unavailable")!=std::string::npos);
+    }
+    unload();net.register_channel=Channel;
+    Reset();net.send_channel=nullptr;CHECK(load(&api,owner)==SCO_OK);
+    { const unsigned oldHosts=hostCalls,oldJoins=joinCalls;
+      UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(1,SCO_WIDGET_BUTTON);
+      UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(2,SCO_WIDGET_BUTTON);
+      CHECK(hostCalls==oldHosts && joinCalls==oldJoins && !networkActive);
+      CHECK(panelStatus.find("protocol unavailable")!=std::string::npos && StatusText().find("protocol unavailable")!=std::string::npos);
+    }
+    unload();net.send_channel=Send;
     // ---- a sco-relay server hosts the session: peer 1 is the server, never a player ----------------------
     // Golden bytes of multiplayer.relay, the same vectors as sco-relay's tests/server/test_relay_wire.cpp.
     CHECK(std::strcmp(rw::kRelayChannel,"multiplayer.relay")==0);

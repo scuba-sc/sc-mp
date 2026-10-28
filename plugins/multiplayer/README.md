@@ -102,8 +102,10 @@ waiting for evidence or incompatible; after 10 seconds they say verification tim
 incompatible. A later valid announcement can complete admission. Leaving clears this evidence.
 A verified player that sends a structurally valid v1 pose contradicts its announcement and is
 excluded until it leaves and rejoins or the session ends. Unknown or malformed pose layouts are
-dropped without interpreting their contents. Failure to register the protocol channel prevents
-the plugin loading.
+dropped without interpreting their contents. When sco.net provides channel registration methods
+but refuses this channel, the plugin rolls back loading. If registration, sending, or membership methods are unavailable, the plugin reports the protocol
+unavailable and refuses Host and Join. When registration methods are absent it still loads without
+registered network channels and must be reloaded with the channel service available.
 
 This is **local application-level gating**, not a sco.net handshake refusal. The authenticated
 transport may still connect an older endpoint, and an unmodified older plugin can still show its

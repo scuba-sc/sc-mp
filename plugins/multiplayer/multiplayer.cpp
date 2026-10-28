@@ -65,6 +65,7 @@ char reply[256]="No session. Host/Join require fresh local activation; default l
 char reason[128]="";
 bool panelLive=false,wasActive=false,announced=false,protocolWarned=false,poseWarned=false;
 unsigned registeredChannels=0;
+bool ProtocolAvailable() { return registeredChannels==kChannelCount && METHOD(net,send_channel) && METHOD(net,get_peers) && METHOD(net,self_peer) && METHOD(net,is_active); }
 uint32_t sequence=0;
 uint64_t lastSend=0,shipId=0,lastProtocol=0,protocolWaitSince=0;
 struct ProtocolPeer { uint64_t id; uint8_t role; };
@@ -572,7 +573,7 @@ sco_result Status(const sco_arg*,uint32_t nargs,void*,char* out,uint32_t cap) {
     const auto state=State();
     const bool consistent=MembershipConsistent();char note[128]="";if(consistent) RelayNote(note,sizeof(note));
     const size_t unverified=UnverifiedCount();
-    std::snprintf(out,cap,"Multiplayer: G13 %s; transport state %u; %zu other players%s; %zu unverified or incompatible peers%s; %zu cleanup pending; Host/Join UI %s; G2 goto unavailable%s%s",METHOD(broker,request_host)?"available":"unavailable (admission/provider)",state.state,consistent?peers.size():0,note,unverified,ProtocolWait(),cleanup.size(),panelLive?"available":"unavailable",reason[0]?"; ":"",reason);return SCO_OK;
+    std::snprintf(out,cap,"Multiplayer: G13 %s; protocol %s; transport state %u; %zu other players%s; %zu unverified or incompatible peers%s; %zu cleanup pending; Host/Join UI %s; G2 goto unavailable%s%s",METHOD(broker,request_host)?"available":"unavailable (admission/provider)",ProtocolAvailable()?"available":"unavailable (network service)",state.state,consistent?peers.size():0,note,unverified,ProtocolWait(),cleanup.size(),panelLive?"available":"unavailable",reason[0]?"; ":"",reason);return SCO_OK;
 }
 sco_result Leave(const sco_arg*,uint32_t nargs,void*,char* out,uint32_t cap) {
     if(nargs) return SCO_BAD_ARG;
@@ -586,6 +587,11 @@ sco_result GoTo(const sco_arg* args,uint32_t nargs,void*,char* out,uint32_t cap)
 }
 void Control(bool host) {
     Services();
+    if(!ProtocolAvailable()) {
+        if(!cfg.remember) Wipe(cfg.pass,sizeof(cfg.pass));
+        std::snprintf(reply,sizeof(reply),"Host/Join unavailable: multiplayer protocol network service unavailable");
+        Log(SCO_LOG_WARN,"host/join refused: multiplayer protocol network service unavailable");return;
+    }
     if(!cfg.name[0] || std::strlen(cfg.pass)<SC_PRIVATE_SESSION_MIN_PASSPHRASE || cfg.hostPort<1024 || cfg.hostPort>65535 || cfg.joinPort<1024 || cfg.joinPort>65535) {
         std::snprintf(reply,sizeof(reply),"Pick a name, a 12-256 byte passphrase and ports 1024-65535");return;
     }
@@ -634,7 +640,7 @@ void PanelEvent(const char* id,const sco_widget_event* e,void*) {
 void UpdatePanel() {
     if(!METHOD(widgets,set_panel) || !METHOD(widgets,remove_panel)) { panelLive=false;return; }
     const auto state=State();const bool consistent=MembershipConsistent();char note[128]="";if(consistent) RelayNote(note,sizeof(note));
-    char status[256];std::snprintf(status,sizeof(status),"G13 %s; transport state %u; %zu peers%s, %zu unverified or incompatible%s, %zu cleanup pending",METHOD(broker,request_host)?"available":"unavailable",state.state,consistent?peers.size():0,note,UnverifiedCount(),ProtocolWait(),cleanup.size());
+    char status[256];std::snprintf(status,sizeof(status),"G13 %s; protocol %s; transport state %u; %zu peers%s, %zu unverified or incompatible%s, %zu cleanup pending",METHOD(broker,request_host)?"available":"unavailable",ProtocolAvailable()?"available":"unavailable (network service)",state.state,consistent?peers.size():0,note,UnverifiedCount(),ProtocolWait(),cleanup.size());
     std::vector<std::string> peerText;std::vector<const char*> rows;
     for(const auto& p:peers) { if(!consistent) break;char s[200];std::snprintf(s,sizeof(s),"%s: %s; avatar %s, ship %s",p.name,p.track.Valid()?"pose observed (v2 motion)":"waiting for pose",p.avatar.id?"owned ghost":"not shown",p.ship.id?"owned ghost":"not shown");peerText.emplace_back(s); }
     for(const auto& s:peerText) rows.push_back(s.c_str());
@@ -675,6 +681,7 @@ void Tick(const char*,const void*,void*) {
     const bool active=Active() && State().state!=SC_PRIVATE_SESSION_IDLE;
     if(!active) { if(wasActive || !peers.empty()) Clear();wasActive=false;UpdatePanel();return; }
     wasActive=true;
+    if(!ProtocolAvailable()) { ClearUnverified();UpdatePanel();return; }
     std::vector<sco_net_peer> members;
     if(!METHOD(net,self_peer) || !Members(members) || std::none_of(members.begin(),members.end(),[](const sco_net_peer& p){return p.peer_id==net->self_peer();})) {
         ClearUnverified();UpdatePanel();return;
