@@ -29,8 +29,8 @@ The files keep the paths they had in sc-offline, so history and patches carry ov
 ## Build
 
 The repo root is a standalone CMake project. It downloads the published SDK archive `sco-sdk-2.4.0.zip`
-from the sco-core pre-release [`sdk-v2.4.0-rc.1`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.1) (SDK 2.4.0, release
-candidate 1; the final `sdk-v2.4.0` will follow), refuses it unless its SHA-256 matches the pin in
+from the sco-core pre-release [`sdk-v2.4.0-rc.2`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2) (SDK 2.4.0, release
+candidate 2; the final `sdk-v2.4.0` will follow), refuses it unless its SHA-256 matches the pin in
 [cmake/ScoSdk.cmake](cmake/ScoSdk.cmake), and builds against the extracted `include/`. It never reads a
 sibling sco-core checkout.
 

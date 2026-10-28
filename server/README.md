@@ -50,7 +50,7 @@ ctest --test-dir build -C Release --output-on-failure
 The root build turns the relay on by itself on Linux (`SC_MP_BUILD_RELAY`, default ON there and OFF elsewhere;
 `-DSC_MP_BUILD_RELAY=OFF` leaves it out). It then downloads `sco-sdk-core-source-<version>.zip` from the same
 sco-core release as the SDK archive (`SCO_SDK_VERSION` and `SCO_SDK_RELEASE_TAG` in
-[cmake/ScoSdk.cmake](../cmake/ScoSdk.cmake); today SDK 2.4.0 release candidate 1, `sdk-v2.4.0-rc.1`), refuses it
+[cmake/ScoSdk.cmake](../cmake/ScoSdk.cmake); today SDK 2.4.0 release candidate 2, `sdk-v2.4.0-rc.2`), refuses it
 unless its SHA-256 matches `SCO_CORE_SOURCE_SHA256` in `cmake/ScoCoreSource.cmake`, unpacks it under the build folder
 and adds it with `add_subdirectory` (`EXCLUDE_FROM_ALL`, the Star Citizen game pack off, the kit's own tests off).
 Only the kit's network library is built, plus the kit's two socket files, `src/net/udp_posix.cpp` and

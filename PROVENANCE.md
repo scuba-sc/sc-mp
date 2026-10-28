@@ -2,8 +2,8 @@
 
 Extracted from scubamount/sc-offline v0.7.8 (commit `4db58d237c5f77ef6b017c135a91970ae7806838`),
 paths `plugins/multiplayer/` and `tools/multiplayer_workflow_test.cpp`, unchanged. GPL-3.0-only, as
-in sc-offline. Consumes the sco-core SDK 2.4.0, release candidate 1 (`sdk-v2.4.0-rc.1`,
-`48d7055ef49e1b073ec59e4ce8ded7a6006329eb`), public headers only; the relay server builds from that
+in sc-offline. Consumes the sco-core SDK 2.4.0, release candidate 2 (`sdk-v2.4.0-rc.2`,
+`844e136ccb280ad8cb43f73bc43c9447e8f6799d`), public headers only; the relay server builds from that
 release's `core-source` kit.
 
 The `relay-import` branch adds sc-offline PR #133 (commit `97b0b7a`), restricted to the module's own
