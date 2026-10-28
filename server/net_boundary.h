@@ -142,6 +142,7 @@ private:
 
 // Who may send on a channel, and whether a message is resent until it arrives.
 enum class ChannelMode : uint8_t {
+    ReliableAll,            // server and players send; library relays player messages
     ReliableFromServer,     // only the server sends; arrives once, in order
     UnreliableFromServer,   // only the server sends; may be lost
     UnreliableToServer,     // players send to the server only, which does not pass it on; may be lost

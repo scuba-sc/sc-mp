@@ -610,6 +610,35 @@ void TestBurstIsNotATeleport() {
     CHECK(track.Sample(2500 + 400, false, 0, pos, rot) && std::fabs(pos[0] - (newestX + 1.5 * step)) < 1e-6);
 }
 
+void TestTimestampedV2Lane() {
+    mpmotion::Track track;
+    auto V2 = [](uint32_t seq, double x, uint64_t sender) {
+        mpwire::Pose pose = MakePose(seq, x);
+        pose.senderMs = sender;
+        pose.velocity[0] = 6.4f;                       // metres/second along +x
+        return pose;
+    };
+    CHECK(track.Add(V2(1, 0.0, 1000), 2000, 1000) == mpmotion::Added::Appended);
+    CHECK(track.Add(V2(2, 0.64, 1100), 2010, 1100) == mpmotion::Added::Appended);
+    CHECK(!track.EstimatedMotion());
+    // A pose whose sender time is not newer drops; so does an out-of-order arrival.
+    CHECK(track.Add(V2(3, 1.28, 1050), 2020, 1050) == mpmotion::Added::Dropped);
+    CHECK(track.Add(V2(4, 1.28, 1150), 2005, 1150) == mpmotion::Added::Dropped);
+    CHECK(track.Add(V2(3, 1.28, 1200), 2030, 1200) == mpmotion::Added::Appended);
+    // The mapped times are 2000, 2100 and 2200. Sampling is 200 ms behind
+    // the clock: check interpolation, the newest pose, then the velocity and cap.
+    double pos[3], rot[4];
+    CHECK(track.Sample(2350, false, 0, pos, rot) && std::fabs(pos[0] - 0.96) < 1e-6);
+    CHECK(track.Sample(2400, false, 0, pos, rot) && std::fabs(pos[0] - 1.28) < 1e-6);
+    CHECK(track.Sample(2450, false, 0, pos, rot) && std::fabs(pos[0] - 1.60) < 1e-6);
+    CHECK(track.Sample(2550, false, 0, pos, rot) && std::fabs(pos[0] - 2.24) < 1e-6);
+    CHECK(track.Sample(2800, false, 0, pos, rot) && std::fabs(pos[0] - 2.24) < 1e-6);
+    // A silence longer than kStaleMs restarts the track; a v1 pose on a v2 track starts a new timing track.
+    CHECK(track.Add(V2(4, 2.56, 3000), 4000, 3000) == mpmotion::Added::ResetStale);
+    CHECK(track.Add(MakePose(5, 3.2), 4010) == mpmotion::Added::ResetTiming);
+    CHECK(track.EstimatedMotion());                    // v1: sender timing is estimated
+}
+
 // ---- B. the loaded modules -----------------------------------------------------------------------------
 
 using Clock = std::chrono::steady_clock;
@@ -646,10 +675,11 @@ void LogFn(sco_plugin*, sco_log_level, const char*) {}
 int NetActive() { return 1; }
 uint64_t Self() { return 3; }
 sco_result GetPeers(sco_net_peer* out, uint32_t* count) {
-    if (*count < 2) return SCO_TOO_MANY;
+    if (*count < 3) return SCO_TOO_MANY;
     out[0] = { 3, 0 };
     out[1] = { 2, 0 };
-    *count = 2;
+    out[2] = { 1, 0 };
+    *count = 3;
     return SCO_OK;
 }
 sco_result PeerName(uint64_t, char* out, uint32_t cap) { std::snprintf(out, cap, "Walker"); return SCO_OK; }
@@ -738,7 +768,7 @@ void Truth(double t, double p[3]) {
 }
 constexpr double kMeanSpeed = 6.4;   // m/s, the mean speed of Truth
 
-struct Packet { double due; unsigned k; Bytes bytes; };
+struct Packet { double due; unsigned k; Bytes v2, v1; };
 
 struct Result {
     unsigned frames = 0, freezes = 0, jumps = 0;
@@ -818,6 +848,12 @@ void RunModules(const char* adaptedPath, const char* baselinePath) {
     for (Module* m : modules) CHECK(m->load(&api, m->owner) == SCO_OK);
     for (Module* m : modules) CHECK(m->messages.count("multiplayer.pose") && m->messages.count("multiplayer.spawn") && m->events.count("tick"));
 
+    const uint8_t protocolPlayer[] = {2, 1};
+    if(adapted.messages.count("multiplayer.protocol")) {
+        adapted.messages.at("multiplayer.protocol")(1, protocolPlayer, 2, nullptr);
+        adapted.messages.at("multiplayer.protocol")(2, protocolPlayer, 2, nullptr);
+    }
+
     // The sender's poses: one every 100 ms for 20 s, each reaching the player 60 ms later plus up to 35 ms
     // either way; 12 in 100 are lost, four in a row (80 to 83) are lost, and pose 120 is held up 160 ms so that
     // it arrives after pose 121. The same list goes to both modules.
@@ -833,13 +869,21 @@ void RunModules(const char* adaptedPath, const char* baselinePath) {
         Truth(sent / 1000.0, p);
         mpwire::Pose pose = MakePose(k, p[0], p[1]);
         pose.lv[0].pos[2] = p[2];
+        pose.senderMs = static_cast<uint64_t>(sent);
+        double previous[3];
+        Truth((sent - 100.0) / 1000.0, previous);
+        for (unsigned j = 0; j < 3; ++j) pose.velocity[j] = static_cast<float>((p[j] - previous[j]) / 0.1);
         const double yaw = 0.3 * sent / 1000.0;
         pose.lv[0].rot[2] = std::sin(yaw / 2);
         pose.lv[0].rot[3] = std::cos(yaw / 2);
         uint8_t data[mpwire::kMaxPose];
         const size_t n = mpwire::EncodePose(pose, data, sizeof(data));
         CHECK(n > 0);
-        packets.push_back({ due, k, Bytes(data, data + n) });
+        if (!n) continue;
+        Bytes v2(data, data + n), v1 = v2;
+        v1[0] = 1;
+        v1.erase(v1.begin() + 8, v1.begin() + 28);
+        packets.push_back({ due, k, v2, v1 });
     }
     std::stable_sort(packets.begin(), packets.end(), [](const Packet& a, const Packet& b) { return a.due < b.due; });
     std::printf("MOTION path: %zu of 200 poses delivered (%u lost, a burst of 4), 60 ms +-35 ms, one pose reordered\n", packets.size(), lost);
@@ -859,8 +903,10 @@ void RunModules(const char* adaptedPath, const char* baselinePath) {
         const double now = SimMs();
         if (now > 21000) break;
         while (next < packets.size() && packets[next].due <= now) {
-            for (Module* m : modules)
-                m->messages.at("multiplayer.pose")(2, packets[next].bytes.data(), static_cast<uint32_t>(packets[next].bytes.size()), nullptr);
+            for (Module* m : modules) {
+                const Bytes& bytes = m == &adapted ? packets[next].v2 : packets[next].v1;
+                m->messages.at("multiplayer.pose")(2, bytes.data(), static_cast<uint32_t>(bytes.size()), nullptr);
+            }
             ++next;
         }
         for (Module* m : modules) m->events.at("tick")("tick", nullptr, nullptr);
@@ -908,6 +954,7 @@ int main(int argc, char** argv) {
     RUN(TestLongGapSpeedUsesEverySequenceStep);
     RUN(TestTeleportFollowsTheCadence);
     RUN(TestBurstIsNotATeleport);
+    RUN(TestTimestampedV2Lane);
     if (argc == 2 && !std::strcmp(argv[1], "--track-tests")) {   // the buffer alone, no module and no real time
         std::printf("multiplayer motion (buffer only): %u passed, %u failed\n", passed, failed);
         return failed ? 1 : 0;

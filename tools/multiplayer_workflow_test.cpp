@@ -36,13 +36,17 @@ std::map<std::string,sco_command> commands;
 std::map<std::string,sco_event_fn> events;
 std::map<std::string,sco_net_on_message> messages;
 std::map<std::string,std::string> db,prior;
+std::string failGetKey;
 unsigned hostCalls=0,joinCalls=0,leaveCalls=0,spawnCalls=0,removeCalls=0,transformCalls=0,sendCalls=0;
-bool brokerPresent=true,networkActive=false,admitted=true,inTx=false;
+bool brokerPresent=true,networkActive=false,admitted=true,inTx=false,widgetsPresent=true,storagePresent=true,failPut=false;
+uint32_t widgetVersion=0,storageVersion=0;
 uint32_t state=0,memberTotal=2,getPeersCalls=0;
 sco_widget_event_fn panelCallback=nullptr;
 bool maskSeen=false,rememberSeen=false,hostSeen=false,joinSeen=false,panelRemoved=false;
-std::string passInPanel;
+std::string passInPanel,addressInPanel;
+int profileIndex=-1;
 namespace rw=sco::relay::wire;
+namespace mpprotocol=sco::relay::wire::protocol;
 uint64_t selfId=1;                               // this player's peer id in the synthetic session
 std::vector<uint64_t> members={1,2};             // the session's peers, self among them
 bool serverIsRelay=false;                        // peer 1 is a relay server (its name says so)
@@ -51,6 +55,7 @@ std::string panelStatus,panelReply;
 std::map<std::string,uint32_t> channelFlags,channelMax;
 std::map<std::string,unsigned> sentCount;
 std::map<std::string,std::vector<uint8_t>> sentLast;
+bool refuseProtocol=false;
 bool refuseNear=false;                           // sco.net refuses to register a multiplayer.near.<slot> channel
 using Bytes=std::vector<uint8_t>;
 void LogFn(sco_plugin* s,sco_log_level,const char* text) { CHECK(s==owner && text);modLog.emplace_back(text?text:""); }
@@ -64,22 +69,28 @@ sco_result Register(sco_plugin* s,const sco_command* c) {
 sco_result Subscribe(sco_plugin*,const char* event,sco_event_fn fn,void*) { events[event]=fn;return SCO_OK; }
 sco_result Unsubscribe(sco_plugin*,const char* event,sco_event_fn) { events.erase(event);return SCO_OK; }
 sco_result SetPanel(sco_plugin* s,const char* id,const char*,const sco_widget_node* nodes,uint32_t n,uint32_t stride,sco_widget_event_fn cb,void*) {
-    if(s!=owner || std::strcmp(id,"multiplayer.session") || stride!=sizeof(*nodes)) return SCO_BAD_ARG;
+    if(s!=owner || std::strcmp(id,"multiplayer.session") || stride!=sizeof(sco_widget_node_1_2)) return SCO_BAD_ARG;
     panelCallback=cb;hostSeen=joinSeen=maskSeen=rememberSeen=false;
     for(uint32_t i=0;i<n;++i) {
-        if(nodes[i].id==1 && nodes[i].kind==SCO_WIDGET_BUTTON) hostSeen=true;
-        if(nodes[i].id==2 && nodes[i].kind==SCO_WIDGET_BUTTON) joinSeen=true;
-        if(nodes[i].id==6) { maskSeen=(nodes[i].flags&SCO_WIDGET_PASSWORD)!=0;passInPanel=nodes[i].text; }
-        if(nodes[i].id==11) rememberSeen=nodes[i].value!=0;
-        if(nodes[i].id==12) panelStatus=nodes[i].label;
-        if(nodes[i].id==14) panelReply=nodes[i].label;
-        if(nodes[i].id==16) { panelRows.clear();for(uint32_t j=0;j<nodes[i].item_count;++j) panelRows.emplace_back(nodes[i].items[j]); }
+        const auto* ext=reinterpret_cast<const sco_widget_node_1_2*>(reinterpret_cast<const char*>(nodes)+i*stride);
+        CHECK(ext->base.base.size==sizeof(*ext) && ext->tag && *ext->tag);
+        const sco_widget_node* node=&ext->base.base;
+        if(node->id==1 && node->kind==SCO_WIDGET_BUTTON) hostSeen=true;
+        if(node->id==2 && node->kind==SCO_WIDGET_BUTTON) joinSeen=true;
+        if(node->id==5) addressInPanel=node->text;
+        if(node->id==6) { maskSeen=(node->flags&SCO_WIDGET_PASSWORD)!=0;passInPanel=node->text; }
+        if(node->id==11) rememberSeen=node->value!=0;
+        if(node->id==12) panelStatus=node->label;
+        if(node->id==14) panelReply=node->label;
+        if(node->id==16) { panelRows.clear();for(uint32_t j=0;j<node->item_count;++j) panelRows.emplace_back(node->items[j]); }
+        if(node->id==18) profileIndex=node->index;
     }
     return SCO_OK;
 }
 sco_result RemovePanel(sco_plugin*,const char*) { panelCallback=nullptr;panelRemoved=true;return SCO_OK; }
-sco_result Put(sco_plugin*,const char* key,const void* value,uint32_t size) { db[key]=std::string(static_cast<const char*>(value),size);return SCO_OK; }
+sco_result Put(sco_plugin*,const char* key,const void* value,uint32_t size) { if(failPut && std::strstr(key,".port")) return SCO_UNAVAILABLE;db[key]=std::string(static_cast<const char*>(value),size);return SCO_OK; }
 sco_result Get(sco_plugin*,const char* key,void* out,uint32_t* size) {
+    if(failGetKey==key) return SCO_UNAVAILABLE;
     auto it=db.find(key);if(it==db.end()) { *size=0;return SCO_NOT_FOUND; }
     const auto needed=static_cast<uint32_t>(it->second.size());if(*size<needed) { *size=needed;return SCO_TOO_MANY; }
     std::memcpy(out,it->second.data(),needed);*size=needed;return SCO_OK;
@@ -120,12 +131,14 @@ sco_result Send(sco_plugin*,const char* channel,const void* data,uint32_t len) {
     sentLast[channel]=Bytes(static_cast<const uint8_t*>(data),static_cast<const uint8_t*>(data)+len);return SCO_OK;
 }
 sco_result Channel(sco_plugin*,const char* id,uint32_t flags,uint32_t max,sco_net_on_message cb,void*) {
+    if(refuseProtocol && !std::strcmp(id,mpprotocol::kChannel)) return SCO_BAD_ARG;
     if(refuseNear && !std::strncmp(id,"multiplayer.near.",17)) return SCO_BAD_ARG;
     channelFlags[id]=flags;channelMax[id]=max;
     if(!std::strcmp(id,"multiplayer.pose")) CHECK(!flags && max==mpwire::kMaxPose);
     else if(!std::strcmp(id,"multiplayer.spawn")) CHECK(flags==SCO_NET_RELIABLE && max==mpwire::kMaxSpawn);
     else if(!std::strcmp(id,"multiplayer.despawn")) CHECK(flags==SCO_NET_RELIABLE && max==16);
     else if(!std::strcmp(id,"multiplayer.relay")) CHECK(flags==(SCO_NET_RELIABLE|SCO_NET_FROM_HOST) && max==rw::kRelayMaxBytes);
+    else if(!std::strcmp(id,mpprotocol::kChannel)) CHECK(flags==SCO_NET_RELIABLE && max==mpprotocol::kBytes);
     else if(!std::strcmp(id,"multiplayer.near_up")) CHECK(flags==SCO_NET_TO_HOST && max==rw::kNearUpMaxBytes);
     else if(!std::strncmp(id,"multiplayer.near.",17)) CHECK(flags==SCO_NET_FROM_HOST && max==rw::kNearDownMaxBytes);
     else CHECK(!"a channel the module should not register");
@@ -143,11 +156,11 @@ double lastGhostX=0;
 sco_result Transform(sco_plugin* s,uint64_t id,uint64_t z,const double p[3],const double[4]) { CHECK(s==owner && id>=101 && z==7);++transformCalls;lastGhostX=p[0];return SCO_OK; }
 sco_net_v1 net{};sco_widgets_v1 widgets{};sco_storage_v1 storage{};sc_private_session_v1 broker{};
 sc_spatial_v1 spatial{};sc_game_spatial_v1 poses{};sc_actors_v1 actors{};sc_entities_v1 entities{};
-sco_result Query(const char* name,uint32_t,const void** out) {
+sco_result Query(const char* name,uint32_t version,const void** out) {
     *out=nullptr;
     if(!std::strcmp(name,SCO_NET_NAME)) *out=&net;
-    else if(!std::strcmp(name,SCO_WIDGETS_NAME)) *out=&widgets;
-    else if(!std::strcmp(name,SCO_STORAGE_NAME)) *out=&storage;
+    else if(!std::strcmp(name,SCO_WIDGETS_NAME)) { widgetVersion=version;if(widgetsPresent && version==SCO_WIDGETS_VERSION_1_2) *out=&widgets; }
+    else if(!std::strcmp(name,SCO_STORAGE_NAME)) { storageVersion=version;if(storagePresent && version==SCO_STORAGE_VERSION_1_1) *out=&storage; }
     else if(!std::strcmp(name,SC_PRIVATE_SESSION_NAME) && brokerPresent) *out=&broker;
     else if(!std::strcmp(name,SC_SPATIAL_SERVICE_NAME)) *out=&spatial;
     else if(!std::strcmp(name,SC_GAME_SPATIAL_NAME)) *out=&poses;
@@ -157,7 +170,7 @@ sco_result Query(const char* name,uint32_t,const void** out) {
 }
 void UI(uint32_t id,uint32_t kind,const char* text=nullptr,double value=0) {
     CHECK(panelCallback!=nullptr);if(!panelCallback) return;
-    sco_widget_event event{};event.size=sizeof(event);event.node_id=id;event.kind=kind;event.text=text;event.value=value;
+    sco_widget_event event{};event.size=sizeof(event);event.node_id=id;event.kind=kind;event.text=text;event.value=value;event.index=static_cast<int32_t>(value);
     panelCallback("multiplayer.session",&event,nullptr);
 }
 void Tick() { CHECK(events.count("tick"));if(events.count("tick")) events["tick"]("tick",nullptr,nullptr); }
@@ -211,7 +224,8 @@ int main(int argc,char** argv) {
     entities.size=sizeof(entities);entities.alive=Alive;entities.set_transform=Transform;
     db={{"name","Pilot"},{"join_address","127.0.0.1"},{"host_port","64091"},{"join_port","64091"},{"show_ships","1"},{"remember_passphrase","0"},{"passphrase","ignored stale synthetic secret"}};
     CHECK(load(nullptr,owner)==SCO_BAD_ARG);
-    CHECK(load(&api,owner)==SCO_OK);CHECK(commands.size()==3 && messages.size()==5 && events.size()==3);
+    CHECK(load(&api,owner)==SCO_OK);CHECK(commands.size()==3 && messages.size()==6 && events.size()==3);
+    CHECK(widgetVersion==SCO_WIDGETS_VERSION_1_2 && storageVersion==SCO_STORAGE_VERSION_1_1);
     CHECK(hostSeen && joinSeen && maskSeen && !rememberSeen && passInPanel.empty());
     CHECK(hostCalls==0 && joinCalls==0 && sendCalls==0);Tick();CHECK(hostCalls==0 && joinCalls==0);
     char output[512];sco_arg who{};who.type=SCO_ARG_STRING;who.v.s="Remote";
@@ -224,36 +238,137 @@ int main(int argc,char** argv) {
     mpwire::Spawn spawn{};spawn.kind=mpwire::kAvatar;spawn.sessionId=mpwire::SessionId(2,mpwire::kAvatar);std::snprintf(spawn.cls,sizeof(spawn.cls),"Synthetic_Human");
     uint8_t data[mpwire::kMaxPose];size_t len=mpwire::EncodeSpawn(spawn,data,sizeof(data));
     messages.at("multiplayer.spawn")(999,data,static_cast<uint32_t>(len),nullptr);Tick();CHECK(spawnCalls==0);
+    Deliver(mpprotocol::kChannel,2,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));
     messages.at("multiplayer.spawn")(2,data,static_cast<uint32_t>(len),nullptr);
     mpwire::Pose pose{};pose.seq=1;pose.levels=1;std::snprintf(pose.lv[0].name,sizeof(pose.lv[0].name),"Synthetic_Zone");pose.lv[0].rot[3]=1;pose.lv[0].pos[0]=3;
     len=mpwire::EncodePose(pose,data,sizeof(data));messages.at("multiplayer.pose")(2,data,static_cast<uint32_t>(len),nullptr);
     Tick();CHECK(spawnCalls==1 && transformCalls>=1);
-    data[0]=99;messages.at("multiplayer.pose")(2,data,static_cast<uint32_t>(len),nullptr);Tick();CHECK(spawnCalls==1);
+    data[0]=99;messages.at("multiplayer.pose")(2,data,static_cast<uint32_t>(len),nullptr);Tick();CHECK(spawnCalls==1 && panelRows.size()==1);
     len=mpwire::EncodeDespawn(mpwire::kAvatar,mpwire::SessionId(2,mpwire::kAvatar),data,sizeof(data));CHECK(len==16);
     messages.at("multiplayer.despawn")(2,data,static_cast<uint32_t>(len),nullptr);CHECK(removeCalls==1);
     {   // More than 16 members: the list is read by growing the buffer, bounded at 64 members
         const auto others=[&](unsigned n){ char want[32];std::snprintf(want,sizeof(want),"; %u other players;",n);return std::strstr(output,want)!=nullptr; };
         const auto poseFrom=[&](uint64_t id){ messages.at("multiplayer.pose")(id,data,static_cast<uint32_t>(mpwire::EncodePose(pose,data,sizeof(data))),nullptr); };
-        memberTotal=20;getPeersCalls=0;poseFrom(20);
-        CHECK(getPeersCalls==2); // 16 offered, TOO_MANY with 20, then 20 offered
+        memberTotal=20;getPeersCalls=0;Deliver(mpprotocol::kChannel,20,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));
+        CHECK(getPeersCalls==4);poseFrom(20); // 16 offered, TOO_MANY with 20, then 20 offered
         commands.at("multiplayer.status").fn(nullptr,0,nullptr,output,sizeof(output));CHECK(others(2));
-        memberTotal=65;getPeersCalls=0;poseFrom(21); // over the cap: no list, no record, one call only
-        CHECK(getPeersCalls==1);commands.at("multiplayer.status").fn(nullptr,0,nullptr,output,sizeof(output));CHECK(others(2));
-        memberTotal=64;getPeersCalls=0;poseFrom(64);CHECK(getPeersCalls==2); // exactly the cap is read
+        memberTotal=65;getPeersCalls=0;Deliver(mpprotocol::kChannel,21,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer})); // over the cap: no list, no record, one call only
+        CHECK(getPeersCalls==1);commands.at("multiplayer.status").fn(nullptr,0,nullptr,output,sizeof(output));CHECK(others(0));
+        memberTotal=64;getPeersCalls=0;Deliver(mpprotocol::kChannel,64,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));CHECK(getPeersCalls==4);poseFrom(64); // exactly the cap is read
         commands.at("multiplayer.status").fn(nullptr,0,nullptr,output,sizeof(output));CHECK(others(3));
-        memberTotal=2;
+        memberTotal=2;Tick();
     }
+    UI(6,SCO_WIDGET_TEXT_INPUT,"secret before command leave");
+    CHECK(!panelRows.empty() && !passInPanel.empty());
     CHECK(commands.at("multiplayer.leave").fn(nullptr,0,nullptr,output,sizeof(output))==SCO_OK);CHECK(!networkActive);
+    CHECK(panelRows.empty() && passInPanel.empty() && panelStatus.find("0 peers")!=std::string::npos);
     UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(2,SCO_WIDGET_BUTTON);CHECK(joinCalls==1 && passInPanel.empty());
-    UI(11,SCO_WIDGET_TOGGLE,nullptr,1);UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic remembered passphrase");UI(3,SCO_WIDGET_BUTTON);UI(1,SCO_WIDGET_BUTTON);
-    CHECK(db.at("remember_passphrase")=="1" && db.at("passphrase")=="synthetic remembered passphrase" && rememberSeen);
+    UI(11,SCO_WIDGET_TOGGLE,nullptr,1);UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic remembered passphrase");UI(1,SCO_WIDGET_BUTTON);
+    CHECK(rememberSeen);UI(19,SCO_WIDGET_BUTTON);CHECK(db.count("profile0.address") && db.at("profile0.address")=="127.0.0.1");
+    UI(5,SCO_WIDGET_TEXT_INPUT,"127.0.0.2");{ const auto before=db;failPut=true;UI(19,SCO_WIDGET_BUTTON);failPut=false;CHECK(db==before && !inTx); }UI(18,SCO_WIDGET_COMBO,nullptr,0);CHECK(passInPanel=="synthetic remembered passphrase");
+    UI(3,SCO_WIDGET_BUTTON);CHECK(passInPanel.empty());
     UI(11,SCO_WIDGET_TOGGLE,nullptr,0);CHECK(!db.count("passphrase"));
     unload();CHECK(panelRemoved && messages.empty() && events.empty());unload();
+    Reset();CHECK(load(&api,owner)==SCO_OK);UI(18,SCO_WIDGET_COMBO,nullptr,0);CHECK(passInPanel=="synthetic remembered passphrase");unload();
+    { // A failed read must never turn a populated slot into an overwrite target.
+        Reset();const auto before=db;failGetKey="profile0.address";CHECK(load(&api,owner)==SCO_OK);
+        UI(5,SCO_WIDGET_TEXT_INPUT,"127.0.0.9");UI(19,SCO_WIDGET_BUTTON);CHECK(db.at("profile0.address")==before.at("profile0.address"));
+        failGetKey.clear();unload();
+    }
+    { // Selection must not alter the current secret on transient read failure.
+        Reset();CHECK(load(&api,owner)==SCO_OK);UI(6,SCO_WIDGET_TEXT_INPUT,"current secret");
+        UI(5,SCO_WIDGET_TEXT_INPUT,"127.0.0.7");const int beforeIndex=profileIndex;
+        failGetKey="profile0.pass";UI(18,SCO_WIDGET_COMBO,nullptr,0);CHECK(passInPanel=="current secret" && addressInPanel=="127.0.0.7" && profileIndex==beforeIndex);
+        CHECK(panelReply.find("could not be read")!=std::string::npos);
+        failGetKey.clear();unload();
+    }
+    { // Bad or unavailable ports and oversized addresses cannot be reused as empty slots.
+        const auto saved=db;
+        for(const auto& failure:{std::string("port-error"),std::string("bad-port"),std::string("long-address")}) {
+            db=saved;Reset();
+            if(failure=="port-error") failGetKey="profile0.port";
+            else if(failure=="bad-port") db["profile0.port"]="invalid";
+            else db["profile0.address"]=std::string(300,'x');
+            CHECK(load(&api,owner)==SCO_OK);const auto original=db.at("profile0.address");
+            UI(5,SCO_WIDGET_TEXT_INPUT,"127.0.0.8");UI(19,SCO_WIDGET_BUTTON);CHECK(db.at("profile0.address")==original);
+            failGetKey.clear();unload();
+        }
+        db=saved;
+    }
+    { // A genuinely missing passphrase selects the profile with an empty secret.
+        const auto saved=db;db.erase("profile0.pass");Reset();CHECK(load(&api,owner)==SCO_OK);
+        UI(6,SCO_WIDGET_TEXT_INPUT,"current secret");UI(18,SCO_WIDGET_COMBO,nullptr,0);
+        CHECK(passInPanel.empty() && !rememberSeen && profileIndex==0);unload();db=saved;
+    }
+    Reset();widgetsPresent=false;storagePresent=false;CHECK(load(&api,owner)==SCO_OK);CHECK(!panelCallback && commands.size()==3);unload();widgetsPresent=storagePresent=true;
     Reset();brokerPresent=false;const unsigned priorHosts=hostCalls;
     CHECK(load(&api,owner)==SCO_OK);CHECK(commands.size()==3 && maskSeen);UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(1,SCO_WIDGET_BUTTON);CHECK(hostCalls==priorHosts);
     CHECK(commands.at("multiplayer.leave").fn(nullptr,0,nullptr,output,sizeof(output))==SCO_UNAVAILABLE);
     unload();Reset();brokerPresent=true;admitted=false;
     CHECK(load(&api,owner)==SCO_OK);UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(1,SCO_WIDGET_BUTTON);CHECK(!networkActive);unload();
+    CHECK(!mpprotocol::WaitTimedOut(100,10099));
+    CHECK(mpprotocol::WaitTimedOut(100,10100));
+    CHECK(!mpprotocol::WaitTimedOut(0,10100));
+    // Compatibility evidence gates display, including after leave/rejoin. A role can only claim
+    // relay for authenticated peer 1; malformed and mismatched bytes revoke admission.
+    Reset();modLog.clear();selfId=1;members={1,2};memberTotal=2;admitted=true;
+    CHECK(load(&api,owner)==SCO_OK);networkActive=true;state=SC_PRIVATE_SESSION_HOSTING;StateEvent(true);
+    PeerEvent(SCO_NET_PEER_JOINED,2);Deliver("multiplayer.spawn",2,SpawnBytes(2));Deliver("multiplayer.pose",2,PoseBytes(1,7));Tick();
+    CHECK(panelRows.empty() && StatusText().find("1 unverified or incompatible")!=std::string::npos);
+    Deliver(mpprotocol::kChannel,2,Bytes({1,mpprotocol::kPlayer}));
+    Deliver(mpprotocol::kChannel,2,Bytes({mpprotocol::kGeneration}));
+    Deliver(mpprotocol::kChannel,2,Bytes({mpprotocol::kGeneration,mpprotocol::kRelay}));Tick();
+    CHECK(panelRows.empty() && StatusText().find("1 unverified or incompatible")!=std::string::npos);
+    std::this_thread::sleep_for(std::chrono::milliseconds(mpprotocol::kWaitMs+10));Tick();
+    CHECK(StatusText().find("protocol verification timed out or incompatible")!=std::string::npos && panelRows.empty());
+    Deliver(mpprotocol::kChannel,2,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));
+    Deliver("multiplayer.spawn",2,SpawnBytes(2));Deliver("multiplayer.pose",2,PoseBytes(2,7));Tick();
+    CHECK(panelRows.size()==1 && StatusText().find("0 unverified or incompatible")!=std::string::npos);
+    Deliver(mpprotocol::kChannel,2,Bytes({99,mpprotocol::kPlayer}));Tick();CHECK(panelRows.empty());
+    Deliver(mpprotocol::kChannel,2,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));Tick();CHECK(panelRows.size()==1);
+    Bytes oldPose=PoseBytes(3,11);oldPose[0]=1;oldPose.erase(oldPose.begin()+8,oldPose.begin()+28);
+    Deliver("multiplayer.pose",2,oldPose);Tick();CHECK(panelRows.empty() && LogCount("version 1 pose")==1);
+    Deliver(mpprotocol::kChannel,2,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));
+    Deliver("multiplayer.spawn",2,SpawnBytes(2));Deliver("multiplayer.pose",2,PoseBytes(4,11));Tick();CHECK(panelRows.empty());
+    PeerEvent(SCO_NET_PEER_LEFT,2);PeerEvent(SCO_NET_PEER_JOINED,2);
+    Deliver(mpprotocol::kChannel,2,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));Tick();CHECK(panelRows.size()==1);
+    members={1};memberTotal=1;CHECK(StatusText().find("0 other players")!=std::string::npos);Tick();CHECK(panelRows.empty());
+    members={1,2};memberTotal=2;PeerEvent(SCO_NET_PEER_LEFT,2);PeerEvent(SCO_NET_PEER_JOINED,2);Tick();CHECK(panelRows.empty());
+    unload();
+    // A joining player cannot trust a roster from a relay without its own matching announcement.
+    Reset();modLog.clear();selfId=3;members={3,1,2};serverIsRelay=true;
+    CHECK(load(&api,owner)==SCO_OK);networkActive=true;state=SC_PRIVATE_SESSION_CONNECTED;StateEvent(true);
+    Deliver(mpprotocol::kChannel,2,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));
+    Deliver("multiplayer.relay",1,RelayBytes(true,15,{{2,0,1},{3,1,1}}));
+    Deliver("multiplayer.spawn",2,SpawnBytes(2));Deliver("multiplayer.pose",2,PoseBytes(1,7));Tick();
+    CHECK(panelRows.empty() && StatusText().find("unverified or incompatible")!=std::string::npos && StatusText().find("via relay")==std::string::npos);
+    Deliver(mpprotocol::kChannel,1,Bytes({1,mpprotocol::kRelay}));
+    Deliver(mpprotocol::kChannel,1,Bytes({mpprotocol::kGeneration}));
+    Deliver("multiplayer.relay",1,RelayBytes(true,15,{{2,0,1},{3,1,1}}));Tick();CHECK(panelRows.empty() && messages.count("multiplayer.near.1")==0);
+    Deliver(mpprotocol::kChannel,1,Bytes({mpprotocol::kGeneration,mpprotocol::kRelay}));
+    Deliver("multiplayer.relay",1,RelayBytes(true,15,{{2,0,1},{3,1,1}}));Tick();
+    CHECK(messages.count("multiplayer.near.1")==1 && StatusText().find("via relay")!=std::string::npos);
+    Deliver(mpprotocol::kChannel,1,Bytes({99,mpprotocol::kRelay}));Tick();
+    CHECK(messages.count("multiplayer.near.1")==0 && panelRows.empty() && StatusText().find("via relay")==std::string::npos);
+    unload();
+    Reset();refuseProtocol=true;CHECK(load(&api,owner)!=SCO_OK);CHECK(messages.empty() && events.empty());refuseProtocol=false;
+    Reset();net.register_channel=nullptr;CHECK(load(&api,owner)==SCO_OK);CHECK(messages.empty());
+    { const unsigned oldHosts=hostCalls,oldJoins=joinCalls;
+      UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(1,SCO_WIDGET_BUTTON);
+      UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(2,SCO_WIDGET_BUTTON);
+      CHECK(hostCalls==oldHosts && joinCalls==oldJoins && !networkActive);
+      CHECK(panelReply.find("protocol network service unavailable")!=std::string::npos);
+      CHECK(panelStatus.find("protocol unavailable")!=std::string::npos && StatusText().find("protocol unavailable")!=std::string::npos);
+    }
+    unload();net.register_channel=Channel;
+    Reset();net.send_channel=nullptr;CHECK(load(&api,owner)==SCO_OK);
+    { const unsigned oldHosts=hostCalls,oldJoins=joinCalls;
+      UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(1,SCO_WIDGET_BUTTON);
+      UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(2,SCO_WIDGET_BUTTON);
+      CHECK(hostCalls==oldHosts && joinCalls==oldJoins && !networkActive);
+      CHECK(panelStatus.find("protocol unavailable")!=std::string::npos && StatusText().find("protocol unavailable")!=std::string::npos);
+    }
+    unload();net.send_channel=Send;
     // ---- a sco-relay server hosts the session: peer 1 is the server, never a player ----------------------
     // Golden bytes of multiplayer.relay, the same vectors as sco-relay's tests/server/test_relay_wire.cpp.
     CHECK(std::strcmp(rw::kRelayChannel,"multiplayer.relay")==0);
@@ -265,7 +380,9 @@ int main(int argc,char** argv) {
     CHECK(messages.count("multiplayer.relay")==1 && channelFlags.at("multiplayer.relay")==(SCO_NET_RELIABLE|SCO_NET_FROM_HOST) && channelMax.at("multiplayer.relay")==rw::kRelayMaxBytes);
     CHECK(modLog.empty()); // loading says nothing and opens nothing
     networkActive=true;state=SC_PRIVATE_SESSION_CONNECTED;
-    StateEvent(true);PeerEvent(SCO_NET_PEER_JOINED,1);PeerEvent(SCO_NET_PEER_JOINED,2);Tick();
+    StateEvent(true);PeerEvent(SCO_NET_PEER_JOINED,1);PeerEvent(SCO_NET_PEER_JOINED,2);
+    Deliver(mpprotocol::kChannel,1,Bytes({mpprotocol::kGeneration,mpprotocol::kRelay}));
+    Deliver(mpprotocol::kChannel,2,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));Tick();
     // Before the server says what it is, the join event of peer 1 makes no record: only peer 2 is counted.
     CHECK(StatusText().find("1 other players")!=std::string::npos && StatusText().find("via relay")==std::string::npos);
     Deliver("multiplayer.spawn",2,SpawnBytes(2));Deliver("multiplayer.pose",2,PoseBytes(1,3));
@@ -275,7 +392,7 @@ int main(int argc,char** argv) {
     Deliver("multiplayer.relay",2,RelayBytes(false,15,{{2,0,1},{3,1,4},{9,2,1}})); // not from the host: ignored
     CHECK(LogCount("relay server found")==0);
     Deliver("multiplayer.relay",1,roster);Tick();
-    CHECK(LogCount("relay server found")==1 && LogCount("joined relay server as peer 3 in slot 1 (generation 4): 2 of 15 players in the session, nearby-only off")==1);
+    CHECK(LogCount("relay server found")==1 && LogCount("joined relay server as peer 3 in slot 1 (generation 4): 2 of 15 transport members, nearby-only off")==1);
     CHECK(StatusText().find("1 other players; via relay server (not a player), slot 1, nearby-only off")!=std::string::npos);
     CHECK(panelRows.size()==1 && panelRows[0].find("Relay")==std::string::npos && panelStatus.find("1 peers; via relay server")!=std::string::npos);
     Deliver("multiplayer.relay",1,roster);CHECK(LogCount("joined relay")==1 && LogCount("relay roster:")==0); // the same roster again is silent
@@ -289,7 +406,7 @@ int main(int argc,char** argv) {
     CHECK(LogCount("ignored a malformed multiplayer.relay")==1 && StatusText().find("malformed relay messages ignored")!=std::string::npos);
     // A new player: the roster changes, and the line says so.
     members={3,1,2,4};Deliver("multiplayer.relay",1,RelayBytes(false,15,{{2,0,1},{3,1,4},{4,2,1}}));
-    CHECK(LogCount("relay roster: 3 of 15 players in the session, slot 1 (generation 4), nearby-only off")==1);
+    CHECK(LogCount("relay roster: 3 of 15 transport members, slot 1 (generation 4), nearby-only off")==1);
     // Players leave one at a time; the session ends: the module says it left the relay session and forgets the server.
     const unsigned removesBefore=removeCalls;
     PeerEvent(SCO_NET_PEER_LEFT,2);Tick();CHECK(removeCalls==removesBefore+1 && panelRows.empty());
@@ -301,6 +418,7 @@ int main(int argc,char** argv) {
     CHECK(load(&api,owner)==SCO_OK);networkActive=true;state=SC_PRIVATE_SESSION_CONNECTED;
     StateEvent(true);PeerEvent(SCO_NET_PEER_JOINED,1);Tick();
     CHECK(StatusText().find("0 other players")!=std::string::npos);
+    Deliver(mpprotocol::kChannel,1,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));
     Deliver("multiplayer.spawn",1,SpawnBytes(1));CHECK(StatusText().find("1 other players")!=std::string::npos && LogCount("relay")==0);
     unload();
     // ---- nearby-only: poses go to the relay server on multiplayer.near_up and come back on multiplayer.near.<slot> ----
@@ -313,15 +431,16 @@ int main(int argc,char** argv) {
     }
     Reset();brokerPresent=true;admitted=true;modLog.clear();serverIsRelay=true;selfId=3;members={3,1,2,4,5};sentCount.clear();sentLast.clear();
     CHECK(load(&api,owner)==SCO_OK);
-    CHECK(messages.size()==5 && channelFlags.at("multiplayer.near_up")==SCO_NET_TO_HOST && channelMax.at("multiplayer.near_up")==rw::kNearUpMaxBytes);
+    CHECK(messages.size()==6 && channelFlags.at("multiplayer.near_up")==SCO_NET_TO_HOST && channelMax.at("multiplayer.near_up")==rw::kNearUpMaxBytes);
     networkActive=true;state=SC_PRIVATE_SESSION_CONNECTED;StateEvent(true);
-    for(uint64_t id:{uint64_t(4),uint64_t(5)}) { PeerEvent(SCO_NET_PEER_JOINED,id);Deliver("multiplayer.spawn",id,SpawnBytes(id)); }
+    Deliver(mpprotocol::kChannel,1,Bytes({mpprotocol::kGeneration,mpprotocol::kRelay}));
+    for(uint64_t id:{uint64_t(4),uint64_t(5)}) { PeerEvent(SCO_NET_PEER_JOINED,id);Deliver(mpprotocol::kChannel,id,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));Deliver("multiplayer.spawn",id,SpawnBytes(id)); }
     Tick(); // no roster yet: the pose goes to the other players, as it does in a session a player hosts
     CHECK(sentCount["multiplayer.pose"]==1 && sentCount["multiplayer.near_up"]==0);
     // The roster: nearby-only on, this player in slot 1, generation 7.
     const Bytes nearRoster=RelayBytes(true,15,{{2,0,1},{3,1,7},{4,2,1},{5,3,1}});
     Deliver("multiplayer.relay",1,nearRoster);
-    CHECK(LogCount("joined relay server as peer 3 in slot 1 (generation 7): 4 of 15 players in the session, nearby-only on")==1);
+    CHECK(LogCount("joined relay server as peer 3 in slot 1 (generation 7): 4 of 15 transport members, nearby-only on")==1);
     CHECK(LogCount("nearby-only: poses go to the relay server on multiplayer.near_up and come back on multiplayer.near.1")==1);
     CHECK(messages.count("multiplayer.near.1")==1 && channelFlags.at("multiplayer.near.1")==SCO_NET_FROM_HOST && channelMax.at("multiplayer.near.1")==rw::kNearDownMaxBytes);
     CHECK(StatusText().find("slot 1, nearby-only on")!=std::string::npos);
@@ -355,6 +474,12 @@ int main(int argc,char** argv) {
     // The right one: generation 7, from the host, naming peer 4.
     Deliver("multiplayer.near.1",1,down(7,4));Tick();
     CHECK(spawnCalls==spawnsBeforeNear+1 && lastGhostX==11);
+    Bytes nearOldPose=poseFour;nearOldPose[0]=1;nearOldPose.erase(nearOldPose.begin()+8,nearOldPose.begin()+28);
+    Deliver("multiplayer.near.1",1,rw::EncodeNearDown(7,4,nearOldPose.data(),nearOldPose.size()));Tick();
+    CHECK(panelRows.size()==1 && LogCount("version 1 pose")==1);
+    Deliver(mpprotocol::kChannel,4,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));Tick();CHECK(panelRows.size()==1);
+    PeerEvent(SCO_NET_PEER_LEFT,4);PeerEvent(SCO_NET_PEER_JOINED,4);
+    Deliver(mpprotocol::kChannel,4,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));Tick();CHECK(panelRows.size()==2);
     // The roster says nearby-only is off: the module stops listening on its slot and sends its pose to the other players again.
     Deliver("multiplayer.relay",1,RelayBytes(false,15,{{2,0,1},{3,1,7},{4,2,1},{5,3,1}}));
     CHECK(messages.count("multiplayer.near.1")==0 && LogCount("nearby-only is off: poses go to the other players on multiplayer.pose")==1);
@@ -366,7 +491,7 @@ int main(int argc,char** argv) {
     CHECK(LogCount("come back on multiplayer.near.2")==1);
     // The session ends: nothing stays registered.
     networkActive=false;state=SC_PRIVATE_SESSION_IDLE;StateEvent(false);
-    CHECK(messages.count("multiplayer.near.2")==0 && messages.size()==5);
+    CHECK(messages.count("multiplayer.near.2")==0 && messages.size()==6);
     unload();CHECK(messages.empty() && events.empty());
     // ---- sco.net refuses the multiplayer.near.<slot> channel: this player's own pose falls back to multiplayer.pose, the
     // module says what that means once per session (every roster retries), and it listens as soon as the channel is accepted.
@@ -375,6 +500,7 @@ int main(int argc,char** argv) {
         Reset();modLog.clear();serverIsRelay=true;selfId=3;members={3,1,2};sentCount.clear();sentLast.clear();refuseNear=true;
         CHECK(load(&api,owner)==SCO_OK);
         networkActive=true;state=SC_PRIVATE_SESSION_CONNECTED;StateEvent(true);
+        Deliver(mpprotocol::kChannel,1,Bytes({mpprotocol::kGeneration,mpprotocol::kRelay}));
         const Bytes nearRosterAgain=RelayBytes(true,15,{{2,0,1},{3,1,4}});
         for(int i=0;i<4;++i) Deliver("multiplayer.relay",1,nearRosterAgain);                     // one roster per announce interval
         Deliver("multiplayer.relay",1,RelayBytes(true,15,{{2,0,1},{3,1,4},{4,2,1}}));          // and one that changes
@@ -390,6 +516,7 @@ int main(int argc,char** argv) {
         // A new session warns again, once.
         networkActive=false;state=SC_PRIVATE_SESSION_IDLE;StateEvent(false);
         refuseNear=true;networkActive=true;state=SC_PRIVATE_SESSION_CONNECTED;StateEvent(true);
+        Deliver(mpprotocol::kChannel,1,Bytes({mpprotocol::kGeneration,mpprotocol::kRelay}));
         for(int i=0;i<3;++i) Deliver("multiplayer.relay",1,nearRosterAgain);
         CHECK(LogCount(line)==2 && messages.count("multiplayer.near.1")==0);
         refuseNear=false;
