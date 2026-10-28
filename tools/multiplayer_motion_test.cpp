@@ -625,13 +625,14 @@ void TestTimestampedV2Lane() {
     CHECK(track.Add(V2(3, 1.28, 1050), 2020, 1050) == mpmotion::Added::Dropped);
     CHECK(track.Add(V2(4, 1.28, 1150), 2005, 1150) == mpmotion::Added::Dropped);
     CHECK(track.Add(V2(3, 1.28, 1200), 2030, 1200) == mpmotion::Added::Appended);
-    // Past the newest sender time the ghost rides the pose velocity: it keeps moving between arrivals.
+    // The mapped times are 2000, 2100 and 2200. Sampling is 200 ms behind
+    // the clock: check interpolation, the newest pose, then the velocity and cap.
     double pos[3], rot[4];
-    CHECK(track.Sample(2200, false, 0, pos, rot));
-    const double x200 = pos[0];
-    CHECK(track.Sample(2300, false, 0, pos, rot));
-    CHECK(pos[0] > x200);
-    CHECK(x200 >= 1.28);                               // at or beyond the newest pose (velocity path)
+    CHECK(track.Sample(2350, false, 0, pos, rot) && std::fabs(pos[0] - 0.96) < 1e-6);
+    CHECK(track.Sample(2400, false, 0, pos, rot) && std::fabs(pos[0] - 1.28) < 1e-6);
+    CHECK(track.Sample(2450, false, 0, pos, rot) && std::fabs(pos[0] - 1.60) < 1e-6);
+    CHECK(track.Sample(2550, false, 0, pos, rot) && std::fabs(pos[0] - 2.24) < 1e-6);
+    CHECK(track.Sample(2800, false, 0, pos, rot) && std::fabs(pos[0] - 2.24) < 1e-6);
     // A silence longer than kStaleMs restarts the track; a v1 pose on a v2 track starts a new timing track.
     CHECK(track.Add(V2(4, 2.56, 3000), 4000, 3000) == mpmotion::Added::ResetStale);
     CHECK(track.Add(MakePose(5, 3.2), 4010) == mpmotion::Added::ResetTiming);
@@ -766,7 +767,7 @@ void Truth(double t, double p[3]) {
 }
 constexpr double kMeanSpeed = 6.4;   // m/s, the mean speed of Truth
 
-struct Packet { double due; unsigned k; Bytes bytes; };
+struct Packet { double due; unsigned k; Bytes v2, v1; };
 
 struct Result {
     unsigned frames = 0, freezes = 0, jumps = 0;
@@ -861,13 +862,20 @@ void RunModules(const char* adaptedPath, const char* baselinePath) {
         Truth(sent / 1000.0, p);
         mpwire::Pose pose = MakePose(k, p[0], p[1]);
         pose.lv[0].pos[2] = p[2];
+        pose.senderMs = static_cast<uint64_t>(sent);
+        double previous[3];
+        Truth((sent - 100.0) / 1000.0, previous);
+        for (unsigned j = 0; j < 3; ++j) pose.velocity[j] = static_cast<float>((p[j] - previous[j]) / 0.1);
         const double yaw = 0.3 * sent / 1000.0;
         pose.lv[0].rot[2] = std::sin(yaw / 2);
         pose.lv[0].rot[3] = std::cos(yaw / 2);
         uint8_t data[mpwire::kMaxPose];
         const size_t n = mpwire::EncodePose(pose, data, sizeof(data));
         CHECK(n > 0);
-        packets.push_back({ due, k, Bytes(data, data + n) });
+        Bytes v2(data, data + n), v1 = v2;
+        v1[0] = 1;
+        v1.erase(v1.begin() + 8, v1.begin() + 28);
+        packets.push_back({ due, k, v2, v1 });
     }
     std::stable_sort(packets.begin(), packets.end(), [](const Packet& a, const Packet& b) { return a.due < b.due; });
     std::printf("MOTION path: %zu of 200 poses delivered (%u lost, a burst of 4), 60 ms +-35 ms, one pose reordered\n", packets.size(), lost);
@@ -887,8 +895,10 @@ void RunModules(const char* adaptedPath, const char* baselinePath) {
         const double now = SimMs();
         if (now > 21000) break;
         while (next < packets.size() && packets[next].due <= now) {
-            for (Module* m : modules)
-                m->messages.at("multiplayer.pose")(2, packets[next].bytes.data(), static_cast<uint32_t>(packets[next].bytes.size()), nullptr);
+            for (Module* m : modules) {
+                const Bytes& bytes = m == &adapted ? packets[next].v2 : packets[next].v1;
+                m->messages.at("multiplayer.pose")(2, bytes.data(), static_cast<uint32_t>(bytes.size()), nullptr);
+            }
             ++next;
         }
         for (Module* m : modules) m->events.at("tick")("tick", nullptr, nullptr);

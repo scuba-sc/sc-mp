@@ -86,6 +86,13 @@ not placed in guessed frames. A buffer of samples with a short, capped
 extrapolation moves the ghosts (see Ghost motion). No shared physics, damage,
 missions or inventory is promised.
 
+Pose senders use wire version 2, with a sender timestamp and velocity. This
+module also accepts version 1 poses, using arrival-based motion estimates, but
+version 1-only modules reject version 2 poses. Mixed-version sessions therefore
+show v1 senders to v2 players but do not show v2 senders to v1 players. There is
+no version negotiation or automatic downgrade; use matching versions for
+bidirectional visibility, including when using the relay.
+
 Avatar ghosts use the locally selected NPC archetype; peer avatar classes are
 informational rather than arbitrary remote actor-spawn authority. Ship ghosts
 are bounded, class-syntax-checked and validated by the owning entity provider.
@@ -141,7 +148,7 @@ check and the refusal when admission is Unknown or EAC is present are exactly as
   `server/` (standard headers only, with golden bytes in `server/tests/test_relay_wire.cpp`; the workflow test
   repeats the roster's). There is no second copy. A layout change gets a new version number, and the server and
   this module change together, in a change of its own.
-- Poses, spawns and despawns are unchanged: the same 10 Hz, the same messages, still relayed between
+- Poses, spawns and despawns use the same channels and 10 Hz pose rate, still relayed between
   players by the network library unless nearby-only is on (below). The module works the same on a session
   hosted by a player.
 
