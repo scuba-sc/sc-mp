@@ -106,8 +106,13 @@ add_subdirectory("${SCO_CORE_SOURCE_ROOT}" sco-core-source EXCLUDE_FROM_ALL)
 
 # These two files only need the kit's headers, so one compiled copy serves the server, its tests and the program.
 add_library(sco_relay_sockets STATIC
-  "${SCO_CORE_SOURCE_ROOT}/src/net/udp_posix.cpp"
+  "${SCO_CORE_SOURCE_ROOT}/src/net/udp_$<IF:$<BOOL:${WIN32}>,win,posix>.cpp"
   "${SCO_CORE_SOURCE_ROOT}/src/net/scope.cpp")
 target_include_directories(sco_relay_sockets PUBLIC "${SCO_CORE_SOURCE_ROOT}/include")
-target_compile_options(sco_relay_sockets PRIVATE -Wall -Wextra $<$<BOOL:${SCO_WERROR}>:-Werror>)
+if(MSVC)
+  target_compile_options(sco_relay_sockets PRIVATE /W4 $<$<BOOL:${SCO_WERROR}>:/WX>)
+  target_link_libraries(sco_relay_sockets PUBLIC ws2_32)
+else()
+  target_compile_options(sco_relay_sockets PRIVATE -Wall -Wextra $<$<BOOL:${SCO_WERROR}>:-Werror>)
+endif()
 set_target_properties(sco_relay_sockets PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
