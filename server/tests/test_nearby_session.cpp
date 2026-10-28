@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+namespace mpprotocol=sco::relay::wire::protocol;
 namespace {
 
 using namespace relaytest;
@@ -314,6 +315,42 @@ void TestABadPositionMessageIsCountedAndWarnedAbout() {
     CHECK(w.Logged("bad position messages 1"));   // the stats line carries the nearby part when nearby-only is on
 }
 
+void TestProtocolAnnouncementsAreRelayed() {
+    for (bool nearby : {false, true}) {
+        World w;
+        Settings s = TestSettings(3); s.nearbyOnly = nearby;
+        RelaySession session(w.serverTransport, s, w.log, kTestIters);
+        std::string why; CHECK(session.Start(0, &why));
+        Joiner ann(w.net, 2), bob(w.net, 3);
+        CHECK(ann.core.RegisterChannel(mpprotocol::kChannel, sco::net::kReliable, mpprotocol::kBytes));
+        CHECK(bob.core.RegisterChannel(mpprotocol::kChannel, sco::net::kReliable, mpprotocol::kBytes));
+        Joiners all{&ann, &bob};
+        CHECK(JoinNow(w, session, all, ann, "Ann"));
+        CHECK(JoinNow(w, session, all, bob, "Bob"));
+        CHECK(RunUntil(w, session, all, 2*s.announceIntervalMs+100, [&] { return ann.Count(mpprotocol::kChannel)>0 && bob.Count(mpprotocol::kChannel)>0; }));
+        bool relaySeen=false;
+        for (const Received& r : bob.got) {
+            uint8_t role=0;
+            if (r.channel==mpprotocol::kChannel && r.from==1 && mpprotocol::Decode(r.data.data(),r.data.size(),&role) && role==mpprotocol::kRelay) relaySeen=true;
+        }
+        CHECK(relaySeen);
+        const uint8_t message[]{mpprotocol::kGeneration,mpprotocol::kPlayer};
+        CHECK(ann.core.Send(mpprotocol::kChannel,message,sizeof(message))==sco::net::SendResult::Ok);
+        CHECK(RunUntil(w, session, all, 2000, [&] {
+            for (const Received& r : bob.got) {
+                uint8_t role=0;
+                if (r.channel==mpprotocol::kChannel && r.from==ann.core.Self() && mpprotocol::Decode(r.data.data(),r.data.size(),&role) && role==mpprotocol::kPlayer) return true;
+            }
+            return false;
+        }));
+        uint8_t role=0;
+        const uint8_t old[]{1,mpprotocol::kPlayer}, badRole[]{mpprotocol::kGeneration,99};
+        CHECK(!mpprotocol::Decode(old,sizeof(old),&role));
+        CHECK(!mpprotocol::Decode(badRole,sizeof(badRole),&role));
+        CHECK(!mpprotocol::Decode(message,1,&role));
+    }
+}
+
 void TestStartLogsTheNearbyMode() {
     {
         World w;
@@ -352,6 +389,7 @@ void RunNearbySessionTests() {
     Run("TestPosesGoOnlyToNearbyPlayers", TestPosesGoOnlyToNearbyPlayers);
     Run("TestASlotThatChangesHandsGetsTheNewGeneration", TestASlotThatChangesHandsGetsTheNewGeneration);
     Run("TestABadPositionMessageIsCountedAndWarnedAbout", TestABadPositionMessageIsCountedAndWarnedAbout);
+    Run("TestProtocolAnnouncementsAreRelayed", TestProtocolAnnouncementsAreRelayed);
     Run("TestStartLogsTheNearbyMode", TestStartLogsTheNearbyMode);
 }
 

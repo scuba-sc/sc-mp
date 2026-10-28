@@ -675,10 +675,11 @@ void LogFn(sco_plugin*, sco_log_level, const char*) {}
 int NetActive() { return 1; }
 uint64_t Self() { return 3; }
 sco_result GetPeers(sco_net_peer* out, uint32_t* count) {
-    if (*count < 2) return SCO_TOO_MANY;
+    if (*count < 3) return SCO_TOO_MANY;
     out[0] = { 3, 0 };
     out[1] = { 2, 0 };
-    *count = 2;
+    out[2] = { 1, 0 };
+    *count = 3;
     return SCO_OK;
 }
 sco_result PeerName(uint64_t, char* out, uint32_t cap) { std::snprintf(out, cap, "Walker"); return SCO_OK; }
@@ -846,6 +847,12 @@ void RunModules(const char* adaptedPath, const char* baselinePath) {
 
     for (Module* m : modules) CHECK(m->load(&api, m->owner) == SCO_OK);
     for (Module* m : modules) CHECK(m->messages.count("multiplayer.pose") && m->messages.count("multiplayer.spawn") && m->events.count("tick"));
+
+    const uint8_t protocolPlayer[] = {2, 1};
+    if(adapted.messages.count("multiplayer.protocol")) {
+        adapted.messages.at("multiplayer.protocol")(1, protocolPlayer, 2, nullptr);
+        adapted.messages.at("multiplayer.protocol")(2, protocolPlayer, 2, nullptr);
+    }
 
     // The sender's poses: one every 100 ms for 20 s, each reaching the player 60 ms later plus up to 35 ms
     // either way; 12 in 100 are lost, four in a row (80 to 83) are lost, and pose 120 is held up 160 ms so that

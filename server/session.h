@@ -2,12 +2,13 @@
 #pragma once
 // RelaySession: the server's one real job. It hosts a sco.net session that players join, and the
 // network library relays what the players send to each other. The server is not a player: it
-// registers no player channel and reads no pose. What it sends is three kinds of message of its own:
+// registers no player pose channel and reads no pose. What it sends is four kinds of message of its own:
+//   - multiplayer.protocol: the current application generation and relay role;
 //   - relay.info (server/relay_info.h): peer 1 is a server, and how many players it takes;
 //   - multiplayer.relay (plugins/multiplayer/relay_wire.h): who is in, in which slot;
 //   - with nearby_only on, a copy of each pose to the players near the sender, on the channel of
 //     each receiver's slot (server/nearby.h).
-// The first two go out when a player joins and every announce_interval_ms after, because the library
+// The first three go out when a player joins and every announce_interval_ms after, because the library
 // tells the server nothing when a player registers a channel after joining.
 //
 // Seams for the callers. The session takes its pipe (DatagramTransport) and the time from the caller:

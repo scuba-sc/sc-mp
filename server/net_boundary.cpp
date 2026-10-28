@@ -237,6 +237,7 @@ SendOutcome ToOutcome(lib::SendResult result) {
 
 uint32_t FlagsOf(ChannelMode mode) {
     switch (mode) {
+    case ChannelMode::ReliableAll:          return lib::kReliable;
     case ChannelMode::ReliableFromServer:   return lib::kReliable | lib::kFromHost;
     case ChannelMode::UnreliableFromServer: return lib::kFromHost;
     case ChannelMode::UnreliableToServer:   return lib::kToHost;
