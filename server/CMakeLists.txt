@@ -10,7 +10,12 @@ get_filename_component(SCO_RELAY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 # Warnings for the server's own code: -Wall -Wextra, and every warning is an error. The kit's code keeps the kit's
 # own setting (SCO_WERROR); it is not ours to tighten.
 function(sco_relay_target_setup target)
-  target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4 /WX)
+    target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+  endif()
   set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 endfunction()
 

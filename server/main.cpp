@@ -20,22 +20,40 @@
 #include <memory>
 #include <signal.h>
 #include <string>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 namespace {
 
 using sco::relay::LogLevel;
 
+#ifdef _WIN32
+HANDLE g_stopEvent = nullptr;
+BOOL WINAPI OnConsoleStop(DWORD event) {
+    if (event != CTRL_C_EVENT && event != CTRL_BREAK_EVENT && event != CTRL_CLOSE_EVENT) return FALSE;
+    SetEvent(g_stopEvent);
+    return TRUE;
+}
+#else
 volatile sig_atomic_t g_stopSignal = 0;   // set by the signal handler, read by the loop
 
 void OnStopSignal(int signalNumber) { g_stopSignal = signalNumber; }
+#endif
 
 // No SA_RESTART: a signal must cut the wait short so the loop sees it at once.
 void InstallStopHandlers() {
+#ifdef _WIN32
+    SetConsoleCtrlHandler(OnConsoleStop, TRUE);
+#else
     struct sigaction action{};
     action.sa_handler = OnStopSignal;
     sigemptyset(&action.sa_mask);
     sigaction(SIGTERM, &action, nullptr);
     sigaction(SIGINT, &action, nullptr);
+#endif
 }
 
 // The caller's clock for the session: milliseconds that only go forward.
@@ -50,7 +68,8 @@ void PrintUsage(std::FILE* out) {
                  "\n"
                  "Hosts one sco.net session on one UDP port. Copy server/sco-relay.example.conf, set the\n"
                  "passphrase and max_players in it, and give the copy as the argument. Stop the server\n"
-                 "with SIGTERM or Ctrl+C: it tells the players and exits 0.\n");
+                 "with Ctrl+C (SIGTERM on POSIX): it tells the players and exits 0.\n"
+                 "Windows wrappers may append --stop-event <existing-local-event>.\n");
 }
 
 }  // namespace
@@ -60,7 +79,11 @@ int main(int argc, char** argv) {
         PrintUsage(stdout);
         return 0;
     }
-    if (argc != 2) {
+    if (argc != 2
+#ifdef _WIN32
+        && !(argc == 4 && std::strcmp(argv[2], "--stop-event") == 0)
+#endif
+    ) {
         PrintUsage(stderr);
         return 2;
     }
@@ -92,20 +115,42 @@ int main(int argc, char** argv) {
             "traffic is signed with the passphrase but not encrypted: players who need privacy should connect "
             "through a VPN");
 
-    InstallStopHandlers();
+#ifdef _WIN32
+    // A named local event lets an operator/service wrapper stop the process
+    // without console injection. Existing events are opened, never replaced.
+    g_stopEvent = argc == 4 ? OpenEventA(SYNCHRONIZE | EVENT_MODIFY_STATE, FALSE, argv[3]) :
+                             CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!g_stopEvent) { log.Log(LogLevel::Error, "cannot open stop event"); return 1; }
+#endif
     sco::relay::RelaySession session(*socket, settings, log);
     if (!session.Start(NowMs(), &why)) {
         log.Log(LogLevel::Error, "cannot start the session: %s", why.c_str());
+#ifdef _WIN32
+        CloseHandle(g_stopEvent); g_stopEvent = nullptr;
+#endif
         return 1;
     }
+    InstallStopHandlers();
 
     sco::relay::RunLoop loop(session, settings, log);
-    while (g_stopSignal == 0) {
+    while (
+#ifdef _WIN32
+        WaitForSingleObject(g_stopEvent, 0) == WAIT_TIMEOUT
+#else
+        g_stopSignal == 0
+#endif
+    ) {
         loop.Pass(NowMs());
         socket->Wait(loop.WaitMs());
     }
 
+#ifdef _WIN32
+    SetConsoleCtrlHandler(OnConsoleStop, FALSE);
+    CloseHandle(g_stopEvent); g_stopEvent = nullptr;
+    log.Log(LogLevel::Info, "received stop event: shutting down");
+#else
     log.Log(LogLevel::Info, "received %s: shutting down", g_stopSignal == SIGINT ? "SIGINT" : "SIGTERM");
+#endif
     session.Stop("the relay server is shutting down");
     loop.ReportStats(NowMs());
     log.Log(LogLevel::Info, "stopped");

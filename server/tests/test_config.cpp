@@ -157,7 +157,7 @@ void TestRefusals() {
     CHECK(Contains(tooMany, Format("at most %u players", sco::relay::kSessionSeats - 1)));
     CHECK(Contains(tooMany, Format("Set max_players to %u or less", sco::relay::kSessionSeats - 1)));
     // In the shipped build the limit is 16 seats, so 16 players is refused with its reason, and 15 is not.
-    if (sco::relay::kSessionSeats == 16) {
+    if constexpr (sco::relay::kSessionSeats == 16) {
         const std::string sixteen = Refusal("passphrase = a long passphrase\nmax_players = 16\n");
         CHECK(Contains(sixteen, "line 2") && Contains(sixteen, "allows at most 15 players"));
         CHECK(Contains(sixteen, "a session holds 16 peers and the server is one of them"));

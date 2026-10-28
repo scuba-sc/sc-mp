@@ -23,7 +23,7 @@ The files keep the paths they had in sc-offline, so history and patches carry ov
 | --- | --- |
 | `plugins/multiplayer/` | the plugin: `multiplayer.cpp`, `multiplayer_wire.h`, `plugin.ini`, `CMakeLists.txt`, and its own `README.md` (protocol, settings, consent) |
 | `tools/multiplayer_workflow_test.cpp` | the module's workflow test |
-| `server/` | the relay server (`sco-relay`), Linux only: a program that carries a session and is never a player, with its own `README.md`, tests and checks. It shares `plugins/multiplayer/relay_wire.h` with the plugin |
+| `server/` | the Windows/Linux relay server (`sco-relay`): a program that carries a session and is never a player, with its own `README.md`, tests and checks. It shares `plugins/multiplayer/relay_wire.h` with the plugin |
 | `cmake/` | `ScoSdk.cmake` (the SDK archive) and `ScoCoreSource.cmake` (the SDK's `core-source` kit, for the relay) |
 
 ## Build
