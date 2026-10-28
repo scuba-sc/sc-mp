@@ -6,8 +6,8 @@
 #   net_boundary_checks  proves the sco-core boundary checks fire when they should: it compiles a header on its own
 #                        and alters copies of the kit's files
 #   relay_no_game_code   proves the server holds no game code and touches the kit's network library in one file
-#   relay_no_game_code_checks proves the source gate accepts the conditional Windows header and rejects other
-#                            Windows headers and paths that climb out of the server folder
+#   relay_no_game_code_checks proves the source gate accepts the guarded Windows SDK headers and rejects other
+#                           Windows headers and paths that climb out of the server folder
 # Linux only, like the server.
 
 add_executable(test_server

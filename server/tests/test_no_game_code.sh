@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-only
-# Prove the source include allowlist stays narrow while the Linux-only build gate accepts main.cpp's conditional
-# Windows console header. Run the real checker on temporary source copies so the checkout is never modified.
+# Prove the source include allowlist stays narrow while the Linux-only build gate accepts the guarded Windows SDK
+# headers used by the relay. Run the real checker on temporary source copies so the checkout is never modified.
 set -eu
 
 root=${1:-}
@@ -24,11 +24,12 @@ copy_sources() {
     cp "$root/plugins/multiplayer/relay_wire.h" "$copy_root/plugins/multiplayer/relay_wire.h"
 }
 
-# The actual production source includes windows.h only in its _WIN32 branch. The full checker must accept it.
+# The production source includes windows.h in main.cpp under _WIN32 and sal.h in log.h under _MSC_VER. The full
+# checker must accept these guarded platform headers.
 copy_sources
 if ! sh "$checker" "$copy_root" "$facts" > "$work/allowed.log" 2>&1; then
     cat "$work/allowed.log" >&2
-    echo "relay_no_game_code_checks: the approved Windows header was rejected" >&2
+    echo "relay_no_game_code_checks: the approved Windows headers were rejected" >&2
     exit 1
 fi
 if ! grep -Fq 'approved system header' "$work/allowed.log"; then
@@ -36,9 +37,9 @@ if ! grep -Fq 'approved system header' "$work/allowed.log"; then
     echo "relay_no_game_code_checks: the include check did not report its approval" >&2
     exit 1
 fi
-echo "ok: accepted the conditional windows.h include"
+echo "ok: accepted the conditional Windows SDK headers"
 
-# A similarly named Windows SDK header is not implicitly approved by the exact windows.h exception.
+# A similarly named Windows SDK header is not implicitly approved by the exact header exceptions.
 copy_sources
 printf '\n#include <windowsx.h>\n' >> "$copy_root/server/main.cpp"
 if sh "$checker" "$copy_root" "$facts" > "$work/windowsx.log" 2>&1; then
@@ -65,6 +66,20 @@ if ! grep -Fq 'log.cpp: windows.h' "$work/misplaced.log"; then
     exit 1
 fi
 echo "ok: rejected windows.h outside main.cpp"
+
+# Keep sal.h confined to log.h, where it is guarded by _MSC_VER for MSVC format annotations.
+copy_sources
+printf '\n#include <sal.h>\n' >> "$copy_root/server/log.cpp"
+if sh "$checker" "$copy_root" "$facts" > "$work/sal.log" 2>&1; then
+    echo "relay_no_game_code_checks: accepted sal.h outside log.h" >&2
+    exit 1
+fi
+if ! grep -Fq 'log.cpp: sal.h' "$work/sal.log"; then
+    cat "$work/sal.log" >&2
+    echo "relay_no_game_code_checks: rejected the misplaced SAL header for an unexpected reason" >&2
+    exit 1
+fi
+echo "ok: rejected sal.h outside log.h"
 
 # An include that resolves through a parent component remains forbidden, even when it names the shared wire header.
 copy_sources

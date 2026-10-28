@@ -121,9 +121,13 @@ fi
 
 # ---- from the sources -------------------------------------------------------------------------------
 
+# The Windows SDK headers are confined to their guarded use sites: windows.h in main.cpp under _WIN32, and sal.h
+# in log.h under _MSC_VER. Every other platform header must be added by name and file here, with a negative-control
+# case in test_no_game_code.sh.
 is_allowed_system_header() {   # <source basename> <header name>
     case "$2" in
         windows.h) [ "$1" = main.cpp ] && return 0; return 1 ;;
+        sal.h) [ "$1" = log.h ] && return 0; return 1 ;;
     esac
     case "$2" in
         algorithm|array|atomic|cerrno|chrono|cmath|csignal|cstdarg|cstddef|cstdint|cstdio|cstdlib|cstring|ctime) return 0 ;;
