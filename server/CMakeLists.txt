@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # The relay server: one library with all of its code (the tests link it too) and the program on top. It is built
 # from the published sco-core source kit (cmake/ScoCoreSource.cmake, which the root CMakeLists.txt includes when
-# SC_MP_BUILD_RELAY is on) and shares plugins/multiplayer/relay_wire.h with the plugin. Linux only; see README.md.
+# SC_MP_BUILD_RELAY is on) and shares plugins/multiplayer/relay_wire.h with the plugin. Windows and Linux; see README.md.
 #
 # The sources include "server/<name>.h" and "plugins/multiplayer/relay_wire.h", so the include root is the
 # repository root.

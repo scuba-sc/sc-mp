@@ -1,7 +1,7 @@
 # Contributing to sc-mp
 
 sc-mp is the optional co-presence `multiplayer` plugin for [sc-offline](https://github.com/scuba-sc/sc-offline),
-and the place where a player-run relay server for it would live. Read [README.md](README.md) first.
+and the home of its player-run relay server. Read [README.md](README.md) first.
 sc-mp consumes the published sco-core SDK only, and sco-core's and sc-offline's contribution rules apply
 here too: [sco-core CONTRIBUTING](https://github.com/scuba-sc/sco-core/blob/main/CONTRIBUTING.md),
 [sc-offline CONTRIBUTING](https://github.com/scuba-sc/sc-offline/blob/main/CONTRIBUTING.md).
@@ -37,7 +37,7 @@ contributor as author or `Co-authored-by`. A change that adds outside code witho
 
 The plugin is `plugins/multiplayer/`. A relay (a headless program that carries a session and is never a
 player) belongs in `server/` next to it, in its own CMake target, with its own README. The relay and the plugin
-share one wire header, `plugins/multiplayer/relay_wire.h` (on the `relay-import` branch today): a new layout gets
+share one wire header, `plugins/multiplayer/relay_wire.h`: a new layout gets
 a new wire version, and an old version is never reinterpreted.
 
 A relay is built from the published SDK's `core-source` profile (`sco::net::Core`, `udp::Socket`,
