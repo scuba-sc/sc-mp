@@ -23,8 +23,8 @@ if(NOT DEFINED SCO_SDK_VERSION)
                       "configure with SC_MP_FETCH_SDK=ON, or leave SC_MP_BUILD_RELAY off")
 endif()
 
-# From the release SHA256SUMS, line for sco-sdk-core-source-<version>.zip (sdk-v2.4.0-rc.1 release).
-set(SCO_CORE_SOURCE_SHA256 "f2f7c35591ed96090240466910e3db408953a9a4f6e0a16a36da83bc2a34ee62"
+# From the release SHA256SUMS, line for sco-sdk-core-source-<version>.zip (sdk-v2.4.0-rc.2 release).
+set(SCO_CORE_SOURCE_SHA256 "ddd1d75055f6b0efd69af4ac2eff6a18a5ff177f87cb28c938af3a625befbbb8"
     CACHE STRING "SHA-256 of sco-sdk-core-source-<version>.zip")
 
 set(_sco_cs_name "sco-sdk-core-source-${SCO_SDK_VERSION}")

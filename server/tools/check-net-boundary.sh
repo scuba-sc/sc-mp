@@ -233,9 +233,9 @@ behaviour $udp_cpp 'both Open calls end in the same bind' 'return OpenBound(port
 behaviour $udp_cpp 'a datagram longer than the buffer is reported as one byte too long' '*len = (msg.msg_flags & MSG_TRUNC) ? cap + 1 : static_cast<size_t>(r);'
 
 # ---- 3. every file the boundary reads, unchanged since it was checked ---------------------------------
-# Blob ids of the files in sco-sdk-core-source-2.4.0.zip (release sdk-v2.4.0-rc.1, SDK 2.4.0 release candidate 1).
-# They are the same ids as at sco-core 686187c (SDK 2.2.0, the pin of the standalone relay this server comes from):
-# none of these files changed in the moves to SDK 2.3.0 and 2.4.0.
+# Blob ids of the files in sco-sdk-core-source-2.4.0.zip (release sdk-v2.4.0-rc.2, SDK 2.4.0 release candidate 2).
+# They are the same ids as at sco-core 686187c (SDK 2.2.0, the pin of the standalone relay this server comes from)
+# and as at sdk-v2.4.0-rc.1: none of these files changed in the moves to SDK 2.3.0, 2.4.0 rc.1 or rc.2.
 # The last five files are not read by the checks above, but the relay compiles or includes them too (they sit
 # under the library's core and its wire), so a change in them is noticed the same way. The fifth is the kit's
 # tests/net_mem.h, the in-memory network that test_server includes (the program never does).
