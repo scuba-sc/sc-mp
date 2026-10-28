@@ -99,7 +99,7 @@ section of [plugins/multiplayer/README.md](../plugins/multiplayer/README.md).
 
 ## Tests
 
-Five tests, registered with CTest, run on Linux with the rest of sc-mp:
+Five tests, registered with CTest, run on both Windows and Linux with the rest of sc-mp:
 
 | Test | What it proves |
 | --- | --- |
@@ -155,13 +155,13 @@ When `check-net-boundary.sh` or the build fails after a kit change, do this in o
 
 These stay in the contributor's standalone relay and can come in later, separate pull requests: the fake-player rig
 and its tests, the 50-player test build, the deploy kit (install script, systemd unit, container image), the
-measurement tools, and the long architecture and report documents. A Windows build is not here either: the
-server is POSIX code, and CI builds the plugin on Windows as before.
+measurement tools, and the long architecture and report documents. Windows relay builds and tests are already
+supported.
 
 ## Files
 
-- `main.cpp`: the program. Reads the config file, opens the UDP socket, loops until SIGINT or SIGTERM, stops the
-  session, exits 0.
+- `main.cpp`: the program. Reads the config file, opens the UDP socket, loops until its platform shutdown event
+  (console control on Windows, SIGINT or SIGTERM on POSIX), stops the session and exits 0.
 - `config.h`, `config.cpp`: the settings and the reader of the config file. A bad file stops the server and the message
   names the line.
 - `address_rule.h`, `address_rule.cpp`: which addresses may talk to the server: the private ranges plus `allowed_addresses`.
