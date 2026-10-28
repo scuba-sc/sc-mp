@@ -190,17 +190,18 @@ void TestNearUpRefusals() {
         dirty[reserved] = 1;
         CHECK(refused(dirty));
     }
+    // Write bit patterns byte by byte: GCC 13 at -O3 misdiagnoses memcpy into these vector copies as out-of-bounds.
     Bytes notANumber = golden;
-    std::memcpy(notANumber.data() + 16, "\x00\x00\x00\x00\x00\x00\xF8\x7F", 8);   // NaN
+    const uint8_t nan[8] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x7F };
+    for (size_t i = 0; i < sizeof nan; ++i) notANumber.at(16 + i) = nan[i];
     CHECK(refused(notANumber));
     Bytes infinite = golden;
-    // +infinity. Written byte by byte with at(): GCC 13 at -O3 takes a memcpy into this copy for a write past the end
-    // of an empty vector (-Warray-bounds, a false positive here), and the build treats warnings as errors.
     const uint8_t positiveInfinity[8] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x7F };
     for (size_t i = 0; i < sizeof positiveInfinity; ++i) infinite.at(24 + i) = positiveInfinity[i];
     CHECK(refused(infinite));
     Bytes beyondTheUniverse = golden;
-    std::memcpy(beyondTheUniverse.data() + 32, "\x00\x00\x90\x1E\xC4\xBC\xD6\x42", 8);   // 1e14
+    const uint8_t beyondUniverse[8] = { 0x00, 0x00, 0x90, 0x1E, 0xC4, 0xBC, 0xD6, 0x42 };
+    for (size_t i = 0; i < sizeof beyondUniverse; ++i) beyondTheUniverse.at(32 + i) = beyondUniverse[i];  // 1e14
     CHECK(refused(beyondTheUniverse));
     CHECK(refused(Bytes(golden.begin(), golden.begin() + 40)));          // a header and no pose
     CHECK(refused(Bytes(golden.begin(), golden.begin() + 20)));          // cut in the middle of the header

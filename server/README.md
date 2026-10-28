@@ -38,8 +38,9 @@ These are the six rules of [CONTRIBUTING.md](../CONTRIBUTING.md), "Guardrails an
 
 ## Build
 
-Linux only. The server uses POSIX sockets and signals; on other systems the root build skips it (see below) and
-builds the plugin as before.
+Windows and Linux. The relay uses the published kit's platform-specific UDP
+transport. Windows uses console control or an existing named stop event; POSIX
+uses its existing signal handlers. Other platforms leave the relay disabled.
 
 ```
 cmake -S . -B build
@@ -47,20 +48,26 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The root build turns the relay on by itself on Linux (`SC_MP_BUILD_RELAY`, default ON there and OFF elsewhere;
+The root build turns the relay on on Windows/Linux when SDK fetching is enabled (`SC_MP_BUILD_RELAY`;
 `-DSC_MP_BUILD_RELAY=OFF` leaves it out). It then downloads `sco-sdk-core-source-<version>.zip` from the same
 sco-core release as the SDK archive (`SCO_SDK_VERSION` and `SCO_SDK_RELEASE_TAG` in
 [cmake/ScoSdk.cmake](../cmake/ScoSdk.cmake); today SDK 2.4.0 release candidate 2, `sdk-v2.4.0-rc.2`), refuses it
 unless its SHA-256 matches `SCO_CORE_SOURCE_SHA256` in `cmake/ScoCoreSource.cmake`, unpacks it under the build folder
 and adds it with `add_subdirectory` (`EXCLUDE_FROM_ALL`, the Star Citizen game pack off, the kit's own tests off).
-Only the kit's network library is built, plus the kit's two socket files, `src/net/udp_posix.cpp` and
+Only the kit's network library is built, plus `src/net/udp_win.cpp` on Windows or `src/net/udp_posix.cpp` on Linux and
 `src/net/scope.cpp`, compiled as they are. For an offline build, put the release assets in a folder and pass
 `-DSCO_SDK_ARCHIVE_DIR=<folder>` (it needs `sco-sdk-<version>.zip` and `sco-sdk-core-source-<version>.zip`); the hash
 is still checked. To move to a newer release, change `SCO_SDK_VERSION`, `SCO_SDK_RELEASE_TAG`,
 `SCO_SDK_SHA256` and `SCO_CORE_SOURCE_SHA256` together (from the release `SHA256SUMS`), then read
 [The sco-core boundary](#the-sco-core-boundary).
 
-The program is `build/server/sco-relay`.
+The program is `build/server/sco-relay` on a single-config POSIX build, or
+`build/server/Release/sco-relay.exe` with the Visual Studio generator.
+
+The native Windows suite passes five registered tests, including the real relay
+child with two authenticated loopback clients, routing, wrong-passphrase refusal
+and clean event-driven shutdown. This is local process/transport evidence, not
+two-PC LAN or game acceptance. POSIX-only shell boundary checks remain separate.
 
 ## Run
 
@@ -80,7 +87,7 @@ section of [plugins/multiplayer/README.md](../plugins/multiplayer/README.md).
 
 ## Tests
 
-Four tests, registered with CTest, run on Linux with the rest of sc-mp:
+Five tests, registered with CTest, run on Linux with the rest of sc-mp:
 
 | Test | What it proves |
 | --- | --- |
@@ -88,6 +95,7 @@ Four tests, registered with CTest, run on Linux with the rest of sc-mp:
 | `sco_relay_program` | the real program: how it starts, what it says for a bad config or a taken port, and that it exits 0 after SIGTERM or SIGINT |
 | `net_boundary_checks` | that the checks below fire when they should, on altered copies of the kit's files |
 | `relay_no_game_code` | that the server holds no game code and touches the kit's network library in one file |
+| `relay_no_game_code_checks` | that the source gate permits the guarded Windows SDK headers only at their use sites and rejects other Windows headers or parent paths |
 
 `test_server` includes `tests/net_mem.h` from the extracted kit (a seeded lossy in-memory network); the server
 itself does not.
@@ -104,8 +112,9 @@ keep stable. So the server touches the library in one place only.
   `server/*.cpp`, `server/*.h` and `cmake/ScoCoreSource.cmake`. It fails when any file but the boundary file
   includes one of the library's headers (the `sco/net/` ones or `sc_net.h`) or writes `sco::net::`, even in a
   comment; when an `#include` is not one of our own headers, `plugins/multiplayer/relay_wire.h` (the only file
-  outside `server/` that is allowed), or a standard or POSIX header (a name with `..` in it is never allowed, even
-  `server/../...`); when the kit was not configured with `SCO_GAME_SC=OFF`; and when the program links anything
+  outside `server/` that is allowed), or a standard or POSIX header (plus `windows.h` in `main.cpp` under `_WIN32` and
+  `sal.h` in `log.h` under `_MSC_VER`; other Windows headers and uses outside those files need explicit allowances; a
+  name with `..` in it is never allowed, even `server/../...`); when the kit was not configured with `SCO_GAME_SC=OFF`; and when the program links anything
   but the server library, the kit's network library and the two socket files, or those libraries hold other objects.
   The link is read twice: from what CMake declares for each target, including the libraries a target passes on to
   whatever links it (`INTERFACE_LINK_LIBRARIES`), and from the program's real link line where the generator writes

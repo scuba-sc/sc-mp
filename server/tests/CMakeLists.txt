@@ -6,6 +6,8 @@
 #   net_boundary_checks  proves the sco-core boundary checks fire when they should: it compiles a header on its own
 #                        and alters copies of the kit's files
 #   relay_no_game_code   proves the server holds no game code and touches the kit's network library in one file
+#   relay_no_game_code_checks proves the source gate accepts the guarded Windows SDK headers and rejects other
+#                           Windows headers and paths that climb out of the server folder
 # Linux only, like the server.
 
 add_executable(test_server
@@ -29,6 +31,15 @@ sco_relay_target_setup(test_server)
 add_test(NAME test_server COMMAND test_server)
 set_tests_properties(test_server PROPERTIES TIMEOUT 600)
 
+if(WIN32)
+  add_executable(test_windows_process test_windows_process.cpp)
+  target_include_directories(test_windows_process PRIVATE "${SCO_CORE_SOURCE_ROOT}/include")
+  target_link_libraries(test_windows_process PRIVATE sco_net ws2_32)
+  sco_relay_target_setup(test_windows_process)
+  add_test(NAME sco_relay_windows_process COMMAND test_windows_process $<TARGET_FILE:sco-relay>)
+  set_tests_properties(sco_relay_windows_process PROPERTIES TIMEOUT 60)
+endif()
+if(NOT WIN32)
 add_test(NAME sco_relay_program
   COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/test_program.sh" "$<TARGET_FILE:sco-relay>")
 set_tests_properties(sco_relay_program PROPERTIES TIMEOUT 300)
@@ -66,3 +77,8 @@ add_test(NAME relay_no_game_code
   COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/../tools/check-no-game-code.sh"
           "${SCO_RELAY_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/relay-build-facts.txt")
 set_tests_properties(relay_no_game_code PROPERTIES TIMEOUT 120)
+add_test(NAME relay_no_game_code_checks
+  COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/test_no_game_code.sh"
+          "${SCO_RELAY_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/relay-build-facts.txt")
+set_tests_properties(relay_no_game_code_checks PROPERTIES TIMEOUT 120)
+endif()
