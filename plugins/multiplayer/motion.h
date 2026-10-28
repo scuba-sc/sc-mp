@@ -180,7 +180,7 @@ public:
                 return true;
             }
             // Without a cadence estimate, the legacy ghost holds.
-            double per_step;
+            double per_step = 0;
             if (!timestamped_ && !SenderStepMs(&per_step)) return true;
             Read(before.pose, ship, level, before_pos, before_rot);
             // The time the sender took for the last step: what the timeline says, but never less than its time per
