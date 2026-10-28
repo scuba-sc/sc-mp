@@ -67,7 +67,12 @@ Logger::Sink StderrSink() {
         const std::time_t now = std::time(nullptr);
         std::tm utc{};
         char stamp[32] = "";
-        if (gmtime_r(&now, &utc)) std::strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%SZ", &utc);
+#ifdef _WIN32
+        const bool converted = gmtime_s(&utc, &now) == 0;
+#else
+        const bool converted = gmtime_r(&now, &utc) != nullptr;
+#endif
+        if (converted) std::strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%SZ", &utc);
         std::fprintf(stderr, "%s %-5s %s\n", stamp, LogLevelName(level), line.c_str());
         std::fflush(stderr);
     };

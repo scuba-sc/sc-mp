@@ -6,7 +6,7 @@
 # says where the generator writes one), and those libraries hold only the objects they should. From the sources: only
 # server/net_boundary.cpp names the kit's network library (includes a sco/net header or sc_net.h, or writes
 # sco::net::, even in a comment), and every #include in server/ is one of our own headers, the shared relay wire
-# header, or a standard or POSIX header (net_boundary.cpp also the library's). An include that climbs out of its
+# header, or an approved standard, POSIX or platform header (net_boundary.cpp also the library's). An include that climbs out of its
 # folder with ".." is never admitted, whatever it points at. Exit 0 means every check passed.
 #
 # Only the production set is read: server/*.cpp, server/*.h and cmake/ScoCoreSource.cmake. Not server/tests,
@@ -121,8 +121,15 @@ fi
 
 # ---- from the sources -------------------------------------------------------------------------------
 
-is_standard_or_posix() {   # <header name>
-    case "$1" in
+# The Windows SDK headers are confined to their guarded use sites: windows.h in main.cpp under _WIN32, and sal.h
+# in log.h under _MSC_VER. Every other platform header must be added by name and file here, with a negative-control
+# case in test_no_game_code.sh.
+is_allowed_system_header() {   # <source basename> <header name>
+    case "$2" in
+        windows.h) [ "$1" = main.cpp ] && return 0; return 1 ;;
+        sal.h) [ "$1" = log.h ] && return 0; return 1 ;;
+    esac
+    case "$2" in
         algorithm|array|atomic|cerrno|chrono|cmath|csignal|cstdarg|cstddef|cstdint|cstdio|cstdlib|cstring|ctime) return 0 ;;
         functional|initializer_list|iterator|limits|map|memory|optional|set|string|string_view|type_traits|utility|vector) return 0 ;;
         arpa/inet.h|fcntl.h|netinet/in.h|poll.h|signal.h|sys/socket.h|sys/types.h|time.h|unistd.h) return 0 ;;
@@ -157,12 +164,12 @@ foreign=$(for file in "$root"/server/*.h "$root"/server/*.cpp; do
             server/*) [ -f "$root/$name" ] && continue ;;
             plugins/multiplayer/relay_wire.h) [ -f "$root/$name" ] && continue ;;
         esac
-        is_standard_or_posix "$name" && continue
+        is_allowed_system_header "$(basename "$file")" "$name" && continue
         echo "$(basename "$file"): $name"
     done
 done)
 if [ -z "$foreign" ]; then
-    ok "every #include in server/ is our own, plugins/multiplayer/relay_wire.h, standard or POSIX (and the library's, in net_boundary.cpp only)"
+    ok "every #include in server/ is our own, plugins/multiplayer/relay_wire.h, an approved system header (and the library's, in net_boundary.cpp only)"
 else
     fail "server/ includes headers it may not: $(echo $foreign)"
 fi

@@ -30,6 +30,7 @@ void RunUdpTests();       // test_udp.cpp
 
 #define CHECK(c) \
     do { \
-        if (c) ++relaytest::g_pass; \
+        const bool result = static_cast<bool>(c); \
+        if (result) ++relaytest::g_pass; \
         else { ++relaytest::g_fail; std::printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } \
     } while (0)
