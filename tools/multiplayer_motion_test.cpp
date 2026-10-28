@@ -872,6 +872,7 @@ void RunModules(const char* adaptedPath, const char* baselinePath) {
         uint8_t data[mpwire::kMaxPose];
         const size_t n = mpwire::EncodePose(pose, data, sizeof(data));
         CHECK(n > 0);
+        if (!n) continue;
         Bytes v2(data, data + n), v1 = v2;
         v1[0] = 1;
         v1.erase(v1.begin() + 8, v1.begin() + 28);

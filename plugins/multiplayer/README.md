@@ -183,6 +183,12 @@ arrive. The module used to draw a ghost 0.1 s behind between its last two poses;
 froze it at the newest, and the next one made it jump. `motion.h` (header only, no host calls) now keeps
 the last 12 poses of each player:
 
+- **Version 2 timing.** Sender monotonic timestamps are mapped to the first
+  arrival's clock; no shared epoch is needed. The innermost player frame uses
+  the transmitted velocity for extrapolation, capped at 3 km/s and 150 ms.
+  Other frames derive velocity from positions and sender times. A non-increasing
+  sender time or backward arrival is dropped; a change between v1 and v2 starts
+  a new track. The arrival-based rules and measured bounds below describe v1.
 - **Dejitter.** A pose has a time on the sender's timeline, not its arrival time: the point, at the pose's
   sequence number, of a line fitted through the arrival times of the last 16 poses. A lost pose leaves a
   gap in the sequence, which the line keeps. The line is held within 150 ms of the arrival times.
@@ -207,8 +213,7 @@ the last 12 poses of each player:
 - **Resets.** The buffer starts over and the ghost goes straight to the new pose, without gliding, when no
   pose arrived for 600 ms, when the pose's frames differ from the last one's (another chain of zones, a
   ship boarded or left), or when two poses are further apart than 3 km/s allows in the time the sender took (a teleport; that time is at least 100 ms per sequence step, or the track's cadence when it knows one, counted up to 50 steps: poses delivered together are not a teleport, and neither is a fast player across 10 steps at 2.5 km/s, or at 500 m a step of a 200 ms sender). A pose that is not newer than the last (wrap-aware) is dropped, as before.
-- Nothing about the wire changes: the ghost's delay is the module's own business, and the server's contract
-  carries no rendering parameter.
+- The ghost's delay is the module's own business; the relay contract carries no rendering parameter.
 
 **How far the lead can be wrong.** The lead is a judgment, not a measurement, and the bounds below are what the motion
 test measured on its fixed inputs, not promises. The test pins the worst lead of each case, not how many runs go over the
