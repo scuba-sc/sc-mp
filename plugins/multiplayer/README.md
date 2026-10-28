@@ -24,21 +24,28 @@ fallback. Host source retains the inactive old implementation for later cleanup.
   admission loss and owner unload close the session. Broker authenticates joins,
   bounds peers/messages/rates and audit-logs its lifecycle without credentials.
 - Passphrase minimum is 12 bytes. The panel masks input with the additive
-  `SCO_WIDGET_PASSWORD` flag; remembering defaults false. After Host/Join an
-  unremembered plugin/UI credential is cleared. Masking is display protection,
-  not encrypted memory or storage. The public widget service copies text and
-  native plugins run with host rights. Remembering explicitly stores plaintext
-  in the existing optional DB key and displays a warning; disable it to delete
-  the key transactionally. User DBs are never copied into release resources.
+  `SCO_WIDGET_PASSWORD` flag; remembering defaults false. Leave clears the
+  plugin's current credential. Masking is display protection, not encrypted
+  memory or storage. The widget service copies text and native plugins have
+  host rights. Explicitly saving a profile with remembering enabled writes its
+  passphrase in plaintext to the optional local DB. To remove it, select the
+  profile, turn remembering off, and save the same profile again. Host-side
+  transient copies and database backups are outside the plugin's control.
 
 ## Settings compatibility
 
-Owner remains **`multiplayer`**, database **`data/storage/multiplayer.db`**. Reuse
-`name`, `join_address`, `avatar_class`, `host_port`, `join_port`, `show_ships`,
-`remember_passphrase`, optionally `passphrase`. Integer values remain decimal
-text; all writes are in one public `sco.storage` transaction. Do not rename,
-truncate or erase existing databases. With no storage, settings remain in memory
-and the panel reports save failure. There is no import of host files or secrets.
+Owner remains **`multiplayer`**, database **`data/storage/multiplayer.db`**. Global
+settings retain `name`, `join_address`, `avatar_class`, `host_port`, `join_port`,
+`show_ships` and `remember_passphrase`. The legacy global `passphrase` is not
+loaded and is deleted on the next successful settings save. Up to eight saved
+server profiles are keyed by address text and join port. Save is explicit and
+transactional; an existing address/port replaces that profile. Select a profile
+in the panel to restore its address, port and optional passphrase; selecting it
+never connects. Profiles are not automatically removed on Leave. Storage 1.1
+is optional; without it, saves fail and session settings remain in memory.
+Widgets 1.2 is optional; without it the panel is absent and the plugin still
+loads. The host must actually render retained panels for these controls to be
+reachable. No host files or secrets are imported.
 
 ## Explicit LAN host policy
 
@@ -79,10 +86,39 @@ not placed in guessed frames. A buffer of samples with a short, capped
 extrapolation moves the ghosts (see Ghost motion). No shared physics, damage,
 missions or inventory is promised.
 
+Pose senders and receivers require pose wire version 2. All players and the relay must use the
+same **multiplayer protocol generation**, currently 2. Upgrade the relay and every player together
+before starting a session; do not mix an older plugin or relay with this generation. The protocol
+generation is a compatibility contract, not the plugin's binary or release version: builds that
+implement the same generation can interoperate. There is no automatic downgrade.
+
+`multiplayer.protocol` is a reliable two-byte announcement: generation, then role (1 player,
+2 relay). Each player repeats its announcement and the relay sends its own with each roster. The
+module accepts evidence only from authenticated session members; only host peer 1 can claim the
+relay role. It does not display a player or consume its spawn or pose until that player and the
+session host have announced the matching generation. It accepts the relay roster and nearby-only
+poses only after the host announces the relay role. The panel and `multiplayer.status` show peers
+waiting for evidence or incompatible; after 10 seconds they say verification timed out or is
+incompatible. A later valid announcement can complete admission. Leaving clears this evidence.
+A verified player that sends a structurally valid v1 pose contradicts its announcement and is
+excluded until it leaves and rejoins or the session ends. Unknown or malformed pose layouts are
+dropped without interpreting their contents. When sco.net provides channel registration methods
+but refuses this channel, the plugin rolls back loading. If registration, sending, or membership methods are unavailable, the plugin reports the protocol
+unavailable and refuses Host and Join. When registration methods are absent it still loads without
+registered network channels and must be reloaded with the channel service available.
+
+This is **local application-level gating**, not a sco.net handshake refusal. The authenticated
+transport may still connect an older endpoint, and an unmodified older plugin can still show its
+own connection state even though it cannot interpret v2 poses. The relay can neither inspect the
+protocol during the existing handshake nor kick an individual peer. Full transport-level refusal
+would require the network API to carry application compatibility in admission and support rejection
+or eviction; every endpoint would need the corresponding upgrade. Check each player's panel for
+compatibility rather than treating a transport connection or roster count as proof of readiness.
+
 Avatar ghosts use the locally selected NPC archetype; peer avatar classes are
 informational rather than arbitrary remote actor-spawn authority. Ship ghosts
 are bounded, class-syntax-checked and validated by the owning entity provider.
-Only authenticated session members allocate peer records; at most 63 peers and
+Only authenticated, protocol-compatible session members allocate peer records; at most 63 peers and
 32 active/pending-removal ghosts. Actors use `game.actors.spawn_npc/despawn`,
 ships use `game.entities.spawn/despawn`, and transforms are owned public calls.
 The member list is read with room for 16 entries; when `sco.net` answers `SCO_TOO_MANY`
@@ -111,10 +147,9 @@ check and the refusal when admission is Unknown or EAC is present are exactly as
   5 s by default): who is in the session, in which slot, and the server's player limit. The module
   reads it only from peer 1, only in version 1 and only when the length and every field are right; a
   message that is not is dropped, and `mod.log` says so once per session.
-- Until the first roster arrives (up to that interval after joining) the module cannot tell a relay
-  server from a player who hosts, so the join event of peer 1 makes no record for it. A host that is a
-  player gets its record from its first spawn or pose, as before. From the first roster on, peer 1 is
-  never added, even if it sent a pose or a spawn.
+- The host announces whether it is a player or relay on `multiplayer.protocol`. A relay is never
+  added as a player; a player host must announce the current generation before it can be listed.
+  The roster is accepted only after a matching relay announcement, and repeats on the server interval.
 - **Nearby-only.** The roster says whether the server filters poses by distance (its `nearby_only` setting,
   off by default). When it is on, the module sends each pose to the server on `multiplayer.near_up`
   (unreliable, to the host only) instead of `multiplayer.pose`, and listens for the poses of nearby players
@@ -128,13 +163,13 @@ check and the refusal when admission is Unknown or EAC is present are exactly as
   each time someone new takes it); the module drops one whose generation is not the one its latest roster
   gave, one that did not come from the host, one whose sender is this player, the server or not in the
   session, and one that is not the contract (one `mod.log` line per session). A pose that arrives on
-  `multiplayer.pose` is still accepted, from a session a player hosts or an unmodified player. Spawns and
+  `multiplayer.pose` is accepted only from a verified player using pose version 2. Spawns and
   despawns are not filtered by nearby-only: they still reach everyone through the network library.
 - The message layouts are in `relay_wire.h`, the one wire header this module shares with the relay server in
   `server/` (standard headers only, with golden bytes in `server/tests/test_relay_wire.cpp`; the workflow test
   repeats the roster's). There is no second copy. A layout change gets a new version number, and the server and
   this module change together, in a change of its own.
-- Poses, spawns and despawns are unchanged: the same 10 Hz, the same messages, still relayed between
+- Poses, spawns and despawns use the same channels and 10 Hz pose rate, still relayed between
   players by the network library unless nearby-only is on (below). The module works the same on a session
   hosted by a player.
 
@@ -145,9 +180,9 @@ player name in any of them):
 | --- | --- |
 | `join request accepted: waiting for the session (0)` / `join request refused (N)` | after **Join**, N being the result code; accepted is not a connection |
 | `relay server found: peer 1 hosts the session and relays players; it is not shown or counted as a player` | the first valid roster of a session |
-| `joined relay server as peer P in slot S (generation G): N of M players in the session, nearby-only off` | the same roster, when it lists this player: **this is the line that shows a join to a relay server** |
-| `relay roster: N of M players in the session, slot S (generation G), nearby-only off` | a later roster whose players, slot or mode differ (an unchanged roster is silent) |
-| `relay roster: N of M players ... this player is not listed yet` | a roster that does not list this player |
+| `joined relay server as peer P in slot S (generation G): N of M transport members, nearby-only off` | the same roster, when it lists this player: **this is the line that shows a join to a relay server** |
+| `relay roster: N of M transport members, slot S (generation G), nearby-only off` | a later roster whose players, slot or mode differ (an unchanged roster is silent) |
+| `relay roster: N of M transport members, this player is not listed yet` | a roster that does not list this player |
 | `nearby-only: poses go to the relay server on multiplayer.near_up and come back on multiplayer.near.S` | the roster says nearby-only is on and lists this player: the module now listens on its slot |
 | `nearby-only is off: poses go to the other players on multiplayer.pose` | a later roster says nearby-only is off |
 | `cannot listen on multiplayer.near.S (code): this player sends its poses on multiplayer.pose and will not see the players the server forwards on that channel` | sco.net refused the channel, once per session; the module tries again at every roster. Only this player's own pose falls back: the poses the server forwards to this seat have no listener |
@@ -169,6 +204,12 @@ arrive. The module used to draw a ghost 0.1 s behind between its last two poses;
 froze it at the newest, and the next one made it jump. `motion.h` (header only, no host calls) now keeps
 the last 12 poses of each player:
 
+- **Version 2 timing.** Sender monotonic timestamps are mapped to the first
+  arrival's clock; no shared epoch is needed. The innermost player frame uses
+  the transmitted velocity for extrapolation, capped at 3 km/s and 150 ms.
+  Other frames derive velocity from positions and sender times. A non-increasing
+  sender time or backward arrival is dropped. The track also retains arrival-based rules
+  used in the historical v1 measurements below; the current plugin accepts only v2 poses.
 - **Dejitter.** A pose has a time on the sender's timeline, not its arrival time: the point, at the pose's
   sequence number, of a line fitted through the arrival times of the last 16 poses. A lost pose leaves a
   gap in the sequence, which the line keeps. The line is held within 150 ms of the arrival times.
@@ -193,8 +234,7 @@ the last 12 poses of each player:
 - **Resets.** The buffer starts over and the ghost goes straight to the new pose, without gliding, when no
   pose arrived for 600 ms, when the pose's frames differ from the last one's (another chain of zones, a
   ship boarded or left), or when two poses are further apart than 3 km/s allows in the time the sender took (a teleport; that time is at least 100 ms per sequence step, or the track's cadence when it knows one, counted up to 50 steps: poses delivered together are not a teleport, and neither is a fast player across 10 steps at 2.5 km/s, or at 500 m a step of a 200 ms sender). A pose that is not newer than the last (wrap-aware) is dropped, as before.
-- Nothing about the wire changes: the ghost's delay is the module's own business, and the server's contract
-  carries no rendering parameter.
+- The ghost's delay is the module's own business; the relay contract carries no rendering parameter.
 
 **How far the lead can be wrong.** The lead is a judgment, not a measurement, and the bounds below are what the motion
 test measured on its fixed inputs, not promises. The test pins the worst lead of each case, not how many runs go over the

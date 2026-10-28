@@ -8,6 +8,10 @@
 // know, whose length is not the one that version has, or whose reserved bytes are not zero. A new
 // layout gets a new version number; version 1 never changes.
 //
+// multiplayer.protocol   reliable, two bytes: application protocol generation and role (1 player,
+//   2 relay). Both relay and players announce; only peer 1 may announce the relay role. It is
+//   separate from each message layout version and is repeated to reach late channel registrations.
+//
 // multiplayer.relay   reliable, FROM_HOST, at most 1024 bytes. Who is in the session and where.
 //   Sent by the server right after each player joins and again every announce_interval_ms, to every
 //   player that registered the channel by then (the same delivery as relay.info). Read it as "still true".
@@ -55,6 +59,25 @@
 
 namespace sco::relay::wire {
 
+// Application protocol generation, independent of binary/release versions. Increment when the
+// plugin/relay contract changes incompatibly. Announcements are sent over authenticated sco.net.
+namespace protocol {
+inline constexpr const char* kChannel = "multiplayer.protocol";
+inline constexpr uint8_t kGeneration = 2;
+inline constexpr uint8_t kPlayer = 1, kRelay = 2;
+inline constexpr size_t kBytes = 2;
+inline constexpr uint64_t kWaitMs = 10000;
+inline bool WaitTimedOut(uint64_t start, uint64_t now) { return start && now >= start && now - start >= kWaitMs; }
+inline bool Decode(const void* data, size_t size, uint8_t* role) {
+    if (!data || !role || size != kBytes) return false;
+    const auto* p = static_cast<const uint8_t*>(data);
+    if (p[0] != kGeneration || (p[1] != kPlayer && p[1] != kRelay)) return false;
+    *role = p[1]; return true;
+}
+}
+
+
+
 static_assert(sizeof(double) == 8 && std::numeric_limits<double>::is_iec559,
               "positions travel as 8-byte IEEE doubles, as the plugin writes them");
 
@@ -87,10 +110,10 @@ inline constexpr double kMaxCoordinateM = 1.0e13;
 // that the plugin would still show, so the server warns. (unverified: from the plugin's README at the pin)
 inline constexpr uint32_t kPluginShowDistanceM = 10000;
 
-// Channel names the relay uses besides the players' own: relay.info, multiplayer.relay,
+// Channel names the relay uses besides the players' own: relay.info, multiplayer.relay, multiplayer.protocol,
 // multiplayer.near_up, and one multiplayer.near.<slot> per slot. A session holds 256 names in all; a
 // plugin may own 32 of them. net_boundary.cpp checks that the two fit.
-inline constexpr uint32_t kRelayFixedChannelNames = 3;
+inline constexpr uint32_t kRelayFixedChannelNames = 4;
 inline constexpr uint32_t kPlayerChannelNamesReserved = 32;
 
 // ---- small helpers ---------------------------------------------------------------------------------

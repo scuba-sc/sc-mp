@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
-// The external multiplayer plugin's messages on sco.net (sco-core's docs/net.md), version 1. Plain bytes,
+// The external multiplayer plugin's messages on sco.net (sco-core's docs/net.md). Plain bytes,
 // little-endian (every sc-offline peer is x64 Windows), written and read field by field: nothing
 // here is a game object, a pointer or a zone id. A zone travels by its NAME ("OOC_Stanton_2b_Daymar")
 // with a position local to it, as teleport's saved spots keep it, because zone ids are volatile
 // streaming handles that mean something only inside one game process.
 //
 //   multiplayer.pose      unreliable, ~10 per second. Where the sender's player is:
-//     u8  version (1)   u8 flags (bit 0: aboard a ship, the ship section follows)
+//     u8  version (2; decode also accepts 1)   u8 flags (bit 0: aboard a ship)
 //     u8  levels (1..kMaxLevels)   u8 shipFirst (0 without a ship, else 1..levels-1)
 //     u32 seq (counts up per pose; older ones are dropped)
+//     v2 only: u64 sender monotonic milliseconds, f32 velocity[3] in the innermost frame
 //     levels x { u8 nameLen (1..kMaxZoneName), name, f64 pos[3], f64 rot[4] (x y z w) }
 //       the player's position and rotation in each zone of their chain, innermost first
 //     ship: levels - shipFirst x { f64 pos[3], f64 rot[4] }
@@ -29,7 +30,8 @@
 
 namespace mpwire {
 
-constexpr uint8_t  kVersion = 1;
+constexpr uint8_t  kVersion = 1;  // spawn/despawn
+constexpr uint8_t  kPoseVersion = 2;
 constexpr int      kMaxLevels = 6;
 constexpr size_t   kMaxZoneName = 63;
 constexpr size_t   kMaxClass = 63;
@@ -38,8 +40,10 @@ constexpr uint8_t  kShip = 2;
 constexpr double   kMaxCoord = 1.0e13;   // metres; a system-level zone holds planets ~1e11-1e12 m out
 
 constexpr size_t kPoseHeader = 8;
+constexpr size_t kPoseV2Extra = sizeof(uint64_t) + 3 * sizeof(float);
 constexpr size_t kPoseRecord = 7 * sizeof(double);
 constexpr size_t kMaxPose = kPoseHeader + kMaxLevels * (1 + kMaxZoneName + kPoseRecord) + (kMaxLevels - 1) * kPoseRecord;
+constexpr size_t kMaxPoseV2 = kMaxPose; // relay limit; oversized v2 combinations are rejected
 constexpr size_t kSpawnHeader = 12;
 constexpr size_t kMaxSpawn = kSpawnHeader + kMaxClass;
 constexpr size_t kDespawn = 16;
@@ -53,6 +57,9 @@ struct Level {
 
 struct Pose {
     uint32_t seq;
+    uint8_t  version;
+    uint64_t senderMs;
+    float velocity[3];
     uint8_t  levels;
     bool     ship;
     uint8_t  shipFirst;
@@ -126,12 +133,15 @@ struct Writer {
 inline size_t EncodePose(const Pose& p, uint8_t* buf, size_t cap) {
     if (p.levels < 1 || p.levels > kMaxLevels) return 0;
     if (p.ship && (p.shipFirst < 1 || p.shipFirst >= p.levels)) return 0;
-    Writer w(buf, cap);
-    w.U8(kVersion);
+    for (float v : p.velocity) if (!std::isfinite(v)) return 0;
+    Writer w(buf, cap < kMaxPoseV2 ? cap : kMaxPoseV2);
+    w.U8(kPoseVersion);
     w.U8(p.ship ? 1 : 0);
     w.U8(p.levels);
     w.U8(p.ship ? p.shipFirst : 0);
     w.U32(p.seq);
+    w.U64(p.senderMs);
+    w.Bytes(p.velocity, sizeof(p.velocity));
     for (int i = 0; i < p.levels; ++i) {
         const size_t len = strnlen(p.lv[i].name, kMaxZoneName + 1);
         if (!ZoneNameOk(p.lv[i].name, len)) return 0;
@@ -194,13 +204,20 @@ inline bool DecodePose(const void* buf, size_t len, Pose& out) {
     if (!buf || len < kPoseHeader || len > kMaxPose) return false;
     Reader r(buf, len);
     out = Pose{};
-    if (r.U8() != kVersion) return false;
+    out.version = r.U8();
+    if (out.version != kVersion && out.version != kPoseVersion) return false;
     const uint8_t flags = r.U8();
     if (flags & ~1u) return false;
     out.ship = (flags & 1) != 0;
     out.levels = r.U8();
     out.shipFirst = r.U8();
     out.seq = r.U32();
+    if (out.version == kPoseVersion) {
+        out.senderMs = r.U64();
+        r.Bytes(out.velocity, sizeof(out.velocity));
+        if (!r.ok) return false;
+        for (float v : out.velocity) if (!std::isfinite(v)) return false;
+    }
     if (out.levels < 1 || out.levels > kMaxLevels) return false;
     if (out.ship ? (out.shipFirst < 1 || out.shipFirst >= out.levels) : out.shipFirst != 0) return false;
     for (int i = 0; i < out.levels; ++i) {

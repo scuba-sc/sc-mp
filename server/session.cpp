@@ -7,6 +7,7 @@
 #include "plugins/multiplayer/relay_wire.h"
 
 namespace sco::relay {
+namespace mpprotocol=wire::protocol;
 
 static_assert(kSessionSeats <= 0xFFFF, "relay.info and multiplayer.relay hold the player limit in 16 bits");
 
@@ -50,6 +51,7 @@ bool RelaySession::AddChannels(std::string* why) {
         *why = "this session was already started. Make a new RelaySession to start again.";
         return false;
     }
+    if (!AddChannel(mpprotocol::kChannel, ChannelMode::ReliableAll, mpprotocol::kBytes, why)) return false;
     if (!AddChannel(wire::kRelayChannel, ChannelMode::ReliableFromServer, wire::kRelayMaxBytes, why)) return false;
     if (!settings_.nearbyOnly) return true;
 
@@ -151,6 +153,8 @@ void RelaySession::OnMessage(std::string_view channel, PeerId from, const uint8_
 }
 
 void RelaySession::Announce() {
+    const uint8_t protocol[] = {mpprotocol::kGeneration, mpprotocol::kRelay};
+    hosted_.Send(mpprotocol::kChannel, protocol, static_cast<uint32_t>(sizeof protocol));
     SendRelayInfo();
     SendRoster();
 }

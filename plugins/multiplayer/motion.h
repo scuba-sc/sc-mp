@@ -4,6 +4,12 @@
 // headers and multiplayer_wire.h only: nothing here touches the host, a clock or a socket, so a test can
 // feed it arrival times and read positions back.
 //
+// v1 uses the arrival-based estimate described below. For v2, Add(pose, arrival_ms, sender_ms) maps
+// strictly increasing sender timestamps onto the first arrival's clock; v2 carries innermost-frame velocity.
+// Other frames and v1 use position-derived estimates.
+// Clocks need not share an epoch. Changing timing mode starts a new track; stale tracks accept a new epoch.
+// Both paths cap extrapolation and detect frame changes and teleports.
+//
 // One Track per remote player. Samples go in as they arrive (Add); a position for the ghost comes out for
 // any time (Sample). What it does:
 //   * Sample buffer. The last kRing poses are kept, each with a time on the sender's timeline.
@@ -72,6 +78,7 @@ enum class Added : uint8_t {
     ResetStale,      // started over: nothing arrived for kStaleMs
     ResetFrame,      // started over: the zones the pose is in changed
     ResetTeleport,   // started over: the player jumped
+    ResetTiming,     // started over: timing mode changed
 };
 
 inline bool SameFrame(const mpwire::Pose& a, const mpwire::Pose& b) {
@@ -83,8 +90,9 @@ inline bool SameFrame(const mpwire::Pose& a, const mpwire::Pose& b) {
 
 class Track {
 public:
-    void Clear() { count_ = 0; raw_count_ = 0; last_arrival_ = 0; cadence_ = 0; }
+    void Clear() { count_ = 0; raw_count_ = 0; last_arrival_ = 0; cadence_ = 0; timestamped_ = false; }
     bool Valid() const { return count_ > 0; }
+    bool EstimatedMotion() const { return count_ && !timestamped_; }
     unsigned Count() const { return count_; }
     uint64_t LastArrivalMs() const { return last_arrival_; }
     // The newest pose (its frames name the zones to resolve), or null.
@@ -92,19 +100,35 @@ public:
     // Time of sample i on the sender's timeline, in ms on the arrival clock; i < Count().
     double TimeOf(unsigned i) const { return s_[i].t; }
 
-    Added Add(const mpwire::Pose& pose, uint64_t arrival_ms) {
-        const bool stale = count_ && arrival_ms - last_arrival_ > kStaleMs;
+    // Legacy v1: estimate sender timing from arrivals. v2: pass the sender's monotonic ms.
+    Added Add(const mpwire::Pose& pose, uint64_t arrival_ms) { return AddImpl(pose, arrival_ms, false, 0); }
+    Added Add(const mpwire::Pose& pose, uint64_t arrival_ms, uint64_t sender_ms) {
+        return AddImpl(pose, arrival_ms, true, sender_ms);
+    }
+
+private:
+    Added AddImpl(const mpwire::Pose& pose, uint64_t arrival_ms, bool timestamped, uint64_t sender_ms) {
+        // v1 (legacy): unsigned wrap makes an out-of-order arrival 'stale' — the track restarts, as before.
+        // v2: out-of-order poses are dropped by the checks below; only a genuine silence restarts the track.
+        const bool stale = count_ && (timestamped && timestamped_
+            ? (arrival_ms >= last_arrival_ && arrival_ms - last_arrival_ > kStaleMs)
+            : (arrival_ms - last_arrival_ > kStaleMs));
         if (count_ && !stale) {
             const uint32_t delta = pose.seq - last_seq_;
             if (!delta || delta >= 0x80000000u) return Added::Dropped;
+            if (timestamped && timestamped_ && sender_ms <= last_sender_ms_) return Added::Dropped;
+            if (timestamped && timestamped_ && arrival_ms < last_arrival_) return Added::Dropped;
         }
         Added result = Added::Appended;
         if (stale) { Clear(); result = Added::ResetStale; }
+        if (count_ && timestamped != timestamped_) { Clear(); result = Added::ResetTiming; }
         const bool had = count_ > 0;
         if (had && !SameFrame(s_[count_ - 1].pose, pose)) { Clear(); result = Added::ResetFrame; }
         const bool had_now = count_ > 0;
         uint64_t seq64 = had_now ? last_seq64_ + static_cast<uint32_t>(pose.seq - last_seq_) : pose.seq;
-        double t = Timeline(seq64, arrival_ms);
+        if (!had_now && timestamped) { sender_origin_ms_ = sender_ms; arrival_origin_ms_ = arrival_ms; }
+        double t = timestamped ? static_cast<double>(arrival_origin_ms_) + static_cast<double>(sender_ms - sender_origin_ms_)
+                               : Timeline(seq64, arrival_ms);
         if (had_now) {
             t = std::max(t, s_[count_ - 1].t + 1.0);   // only to keep the samples in order; no speed is ever worked out from it
             if (Teleported(s_[count_ - 1].pose, pose, t - s_[count_ - 1].t, seq64 - s_[count_ - 1].seq)) {
@@ -113,7 +137,8 @@ public:
                 t = static_cast<double>(arrival_ms);
                 seq64 = pose.seq;                 // a new track counts from this pose, as after any other reset
                 raw_count_ = 0;
-                Timeline(seq64, arrival_ms);      // restart the fit with this sample alone
+                if (timestamped) { sender_origin_ms_ = sender_ms; arrival_origin_ms_ = arrival_ms; }
+                else Timeline(seq64, arrival_ms);  // restart the fit with this sample alone
             }
         }
         if (count_ == kRing) {
@@ -128,9 +153,12 @@ public:
         last_seq_ = pose.seq;
         last_seq64_ = count_ == 1 ? pose.seq : seq64;
         last_arrival_ = arrival_ms;
+        timestamped_ = timestamped;
+        last_sender_ms_ = sender_ms;
         return result;
     }
 
+public:
     // Where the ghost is at now_ms: the player's pose in level `level` of the newest pose (ship: the ship's
     // pose in that level; the level must be at least the pose's shipFirst). false with no sample.
     bool Sample(uint64_t now_ms, bool ship, unsigned level, double pos[3], double rot[4]) const {
@@ -142,16 +170,23 @@ public:
             const Entry& before = s_[count_ - 2];
             double before_pos[3], before_rot[4];
             Read(last.pose, ship, level, pos, rot);
-            // No evidence of how long the sender takes (the newest poses came together and the track is too young to
-            // know its cadence): the ghost holds. The sender's minimum is a floor, not an answer: a sender slower than
-            // 10 Hz would be led too far ahead.
-            double per_step;
-            if (!SenderStepMs(&per_step)) return true;
+            // v2 carries velocity only in the innermost player frame; never apply it to ship or other frames.
+            if (timestamped_ && !ship && level == 0) {
+                const double ahead = std::min(rt - last.t, kMaxExtrapolateMs) / 1000.0;
+                double speed = 0;
+                for (float v : last.pose.velocity) speed += static_cast<double>(v) * v;
+                const double scale = speed > kTeleportSpeed * kTeleportSpeed ? kTeleportSpeed / std::sqrt(speed) : 1.0;
+                for (int j = 0; j < 3; ++j) pos[j] += last.pose.velocity[j] * ahead * scale;
+                return true;
+            }
+            // Without a cadence estimate, the legacy ghost holds.
+            double per_step = 0;
+            if (!timestamped_ && !SenderStepMs(&per_step)) return true;
             Read(before.pose, ship, level, before_pos, before_rot);
             // The time the sender took for the last step: what the timeline says, but never less than its time per
             // sequence step. (Arrival times of poses delivered together are 1 ms apart; the sender's were not.)
             const double steps = SeqSteps(last.seq - before.seq);
-            const double gap = std::max(last.t - before.t, per_step * steps);
+            const double gap = timestamped_ ? last.t - before.t : std::max(last.t - before.t, per_step * steps);
             const double ahead = std::min(rt - last.t, kMaxExtrapolateMs);
             double lead[3], length = 0, stepLength = 0;
             for (int j = 0; j < 3; ++j) {
@@ -254,7 +289,8 @@ private:
     // gap (2.5 km/s over 10 steps), too few for any jump to pass.
     bool Teleported(const mpwire::Pose& a, const mpwire::Pose& b, double dt_ms, uint64_t seq_difference) const {
         const double per_step = std::max(kSenderStepMs, cadence_);
-        const double seconds = std::max(dt_ms, per_step * std::min(SeqSteps(seq_difference), kMaxTeleportSteps)) / 1000.0;
+        const double seconds = (timestamped_ ? std::min(dt_ms, kSenderStepMs * kMaxTeleportSteps)
+                                             : std::max(dt_ms, per_step * std::min(SeqSteps(seq_difference), kMaxTeleportSteps))) / 1000.0;
         const double limit = kTeleportSpeed * seconds;
         for (unsigned i = 0; i < b.levels; ++i) {
             if (Far(a.lv[i].pos, b.lv[i].pos, limit)) return true;
@@ -276,6 +312,8 @@ private:
     uint32_t last_seq_ = 0;
     uint64_t last_seq64_ = 0;
     uint64_t last_arrival_ = 0;
+    bool timestamped_ = false;
+    uint64_t sender_origin_ms_ = 0, arrival_origin_ms_ = 0, last_sender_ms_ = 0;
 };
 
 }  // namespace mpmotion
