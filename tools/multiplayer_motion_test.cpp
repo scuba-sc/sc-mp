@@ -610,6 +610,34 @@ void TestBurstIsNotATeleport() {
     CHECK(track.Sample(2500 + 400, false, 0, pos, rot) && std::fabs(pos[0] - (newestX + 1.5 * step)) < 1e-6);
 }
 
+void TestTimestampedV2Lane() {
+    mpmotion::Track track;
+    auto V2 = [](uint32_t seq, double x, uint64_t sender) {
+        mpwire::Pose pose = MakePose(seq, x);
+        pose.senderMs = sender;
+        pose.velocity[0] = 6.4f;                       // metres/second along +x
+        return pose;
+    };
+    CHECK(track.Add(V2(1, 0.0, 1000), 2000, 1000) == mpmotion::Added::Appended);
+    CHECK(track.Add(V2(2, 0.64, 1100), 2010, 1100) == mpmotion::Added::Appended);
+    CHECK(!track.EstimatedMotion());
+    // A pose whose sender time is not newer drops; so does an out-of-order arrival.
+    CHECK(track.Add(V2(3, 1.28, 1050), 2020, 1050) == mpmotion::Added::Dropped);
+    CHECK(track.Add(V2(4, 1.28, 1150), 2005, 1150) == mpmotion::Added::Dropped);
+    CHECK(track.Add(V2(3, 1.28, 1200), 2030, 1200) == mpmotion::Added::Appended);
+    // Past the newest sender time the ghost rides the pose velocity: it keeps moving between arrivals.
+    double pos[3], rot[4];
+    CHECK(track.Sample(2200, false, 0, pos, rot));
+    const double x200 = pos[0];
+    CHECK(track.Sample(2300, false, 0, pos, rot));
+    CHECK(pos[0] > x200);
+    CHECK(x200 >= 1.28);                               // at or beyond the newest pose (velocity path)
+    // A silence longer than kStaleMs restarts the track; a v1 pose on a v2 track starts a new timing track.
+    CHECK(track.Add(V2(4, 2.56, 3000), 4000, 3000) == mpmotion::Added::ResetStale);
+    CHECK(track.Add(MakePose(5, 3.2), 4010) == mpmotion::Added::ResetTiming);
+    CHECK(track.EstimatedMotion());                    // v1: sender timing is estimated
+}
+
 // ---- B. the loaded modules -----------------------------------------------------------------------------
 
 using Clock = std::chrono::steady_clock;
@@ -908,6 +936,7 @@ int main(int argc, char** argv) {
     RUN(TestLongGapSpeedUsesEverySequenceStep);
     RUN(TestTeleportFollowsTheCadence);
     RUN(TestBurstIsNotATeleport);
+    RUN(TestTimestampedV2Lane);
     if (argc == 2 && !std::strcmp(argv[1], "--track-tests")) {   // the buffer alone, no module and no real time
         std::printf("multiplayer motion (buffer only): %u passed, %u failed\n", passed, failed);
         return failed ? 1 : 0;

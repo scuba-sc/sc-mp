@@ -55,12 +55,19 @@ struct Settings {
     int hostPort=64091,joinPort=64091;
     bool showShips=true,remember=false;
 } cfg;
+constexpr unsigned kProfiles=8;
+struct Profile { char address[16]=""; int port=64091; };
+std::array<Profile,kProfiles> profiles{};
+int selectedProfile=-1;
+bool profilesLoaded=false;
 char reply[256]="No session. Host/Join require fresh local activation; default loopback only.";
 char reason[128]="";
 bool panelLive=false,wasActive=false,announced=false;
 unsigned registeredChannels=0;
 uint32_t sequence=0;
 uint64_t lastSend=0,shipId=0;
+mpwire::Pose previousSent{};
+bool havePreviousSent=false;
 char announcedShip[64]="";
 struct Ghost { uint64_t id=0,since=0,lastAttempt=0; char cls[64]=""; bool actor=false; };
 struct Peer {
@@ -118,16 +125,61 @@ sc_private_session_state_v1 State() {
     return out;
 }
 void UpdatePanel();
-bool Read(const char* key,char* out,uint32_t cap) {
-    if(!METHOD(store,get) || cap<2) return false;
+sco_result ReadValue(const char* key,char* out,uint32_t cap) {
+    if(!METHOD(store,get) || cap<2) return SCO_UNAVAILABLE;
     std::vector<char> buf(cap,0);uint32_t size=cap-1;
-    if(store->get(self,key,buf.data(),&size)!=SCO_OK || size>=cap || std::memchr(buf.data(),0,size)) return false;
-    std::memcpy(out,buf.data(),size);out[size]=0;return true;
+    sco_result r=store->get(self,key,buf.data(),&size);
+    if(r==SCO_OK && (size>=cap || std::memchr(buf.data(),0,size))) r=SCO_BAD_ARG;
+    if(r==SCO_OK) { std::memcpy(out,buf.data(),size);out[size]=0; }
+    Wipe(buf.data(),buf.size());return r;
 }
+bool Read(const char* key,char* out,uint32_t cap) { return ReadValue(key,out,cap)==SCO_OK; }
 int ReadInt(const char* key,int fallback,int minimum,int maximum) {
     char text[24];if(!Read(key,text,sizeof(text))) return fallback;
     char* end=nullptr;const long v=std::strtol(text,&end,10);
     return !text[0] || *end || v<minimum || v>maximum ? fallback:static_cast<int>(v);
+}
+void ProfileKey(char* out,size_t cap,unsigned i,const char* field) { std::snprintf(out,cap,"profile%u.%s",i,field); }
+void LoadProfiles() {
+    for(auto& p:profiles) p=Profile();
+    selectedProfile=-1;profilesLoaded=true;
+    for(unsigned i=0;i<kProfiles;++i) {
+        char key[40],text[257]{};ProfileKey(key,sizeof(key),i,"address");
+        sco_result r=ReadValue(key,text,sizeof(text));
+        if(r==SCO_NOT_FOUND) continue;
+        if(r!=SCO_OK || !text[0] || !Text(profiles[i].address,text)) { profilesLoaded=false;Wipe(text,sizeof(text));continue; }
+        ProfileKey(key,sizeof(key),i,"port");r=ReadValue(key,text,sizeof(text));
+        if(r==SCO_OK) {
+            char* end=nullptr;const long port=std::strtol(text,&end,10);
+            if(!text[0] || *end || port<1024 || port>65535) { profiles[i]=Profile();profilesLoaded=false; }
+            else profiles[i].port=static_cast<int>(port);
+        } else if(r!=SCO_NOT_FOUND) { profiles[i]=Profile();profilesLoaded=false; }
+        Wipe(text,sizeof(text));
+    }
+}
+sco_result SaveProfile() {
+    if(!profilesLoaded || !cfg.address[0] || !METHOD(store,put) || !METHOD(store,begin) || !METHOD(store,commit) || !METHOD(store,rollback)) return SCO_UNAVAILABLE;
+    int slot=-1;
+    for(unsigned i=0;i<kProfiles;++i) if(!std::strcmp(profiles[i].address,cfg.address) && profiles[i].port==cfg.joinPort) { slot=static_cast<int>(i);break; }
+    if(slot<0) for(unsigned i=0;i<kProfiles;++i) if(!profiles[i].address[0]) { slot=static_cast<int>(i);break; }
+    if(slot<0) return SCO_TOO_MANY;
+    char key[40],port[24];std::snprintf(port,sizeof(port),"%d",cfg.joinPort);
+    sco_result r=store->begin(self);if(r!=SCO_OK) return r;
+    const auto put=[&](const char* field,const char* value) { ProfileKey(key,sizeof(key),static_cast<unsigned>(slot),field);if(r==SCO_OK) r=store->put(self,key,value,static_cast<uint32_t>(std::strlen(value))); };
+    put("address",cfg.address);put("port",port);put("pass",cfg.remember?cfg.pass:"");
+    if(r==SCO_OK) r=store->commit(self);
+    if(r!=SCO_OK) { store->rollback(self);return r; }
+    Profile& p=profiles[static_cast<unsigned>(slot)];Text(p.address,cfg.address);p.port=cfg.joinPort;selectedProfile=slot;return SCO_OK;
+}
+void SelectProfile(int slot) {
+    if(slot<0 || slot>=static_cast<int>(kProfiles) || !profiles[static_cast<unsigned>(slot)].address[0]) return;
+    char key[40],text[257]{};ProfileKey(key,sizeof(key),static_cast<unsigned>(slot),"pass");
+    const sco_result r=ReadValue(key,text,sizeof(text));char pass[sizeof(cfg.pass)]{};
+    if((r!=SCO_OK && r!=SCO_NOT_FOUND) || (r==SCO_OK && !Text(pass,text))) {
+        Wipe(text,sizeof(text));Wipe(pass,sizeof(pass));std::snprintf(reply,sizeof(reply),"Server profile could not be read");return;
+    }
+    const Profile& p=profiles[static_cast<unsigned>(slot)];selectedProfile=slot;Text(cfg.address,p.address);cfg.joinPort=p.port;
+    Wipe(cfg.pass,sizeof(cfg.pass));Text(cfg.pass,pass);cfg.remember=pass[0]!=0;Wipe(text,sizeof(text));Wipe(pass,sizeof(pass));
 }
 void LoadSettings() {
     cfg=Settings();Text(cfg.avatar,defaultAvatar);
@@ -138,8 +190,7 @@ void LoadSettings() {
     cfg.hostPort=ReadInt("host_port",64091,1024,65535);
     cfg.joinPort=ReadInt("join_port",64091,1024,65535);
     cfg.showShips=ReadInt("show_ships",1,0,1)!=0;
-    cfg.remember=ReadInt("remember_passphrase",0,0,1)!=0;
-    if(cfg.remember && Read("passphrase",text,sizeof(text))) Text(cfg.pass,text);
+    cfg.remember=false;
     Wipe(text,sizeof(text));
 }
 sco_result SaveSettings() {
@@ -149,8 +200,7 @@ sco_result SaveSettings() {
     const auto number=[&](const char* key,int v) { char s[24];std::snprintf(s,sizeof(s),"%d",v);put(key,s); };
     put("name",cfg.name);put("join_address",cfg.address);put("avatar_class",cfg.avatar);
     number("host_port",cfg.hostPort);number("join_port",cfg.joinPort);number("show_ships",cfg.showShips?1:0);number("remember_passphrase",cfg.remember?1:0);
-    if(cfg.remember) put("passphrase",cfg.pass);
-    else if(r==SCO_OK) { r=store->del(self,"passphrase");if(r==SCO_NOT_FOUND) r=SCO_OK; }
+    if(r==SCO_OK) { r=store->del(self,"passphrase");if(r==SCO_NOT_FOUND) r=SCO_OK; }
     if(r==SCO_OK) r=store->commit(self);
     if(r!=SCO_OK) store->rollback(self);
     return r;
@@ -191,7 +241,7 @@ void ResetRelay() {
     SetNearChannel("");
     relay=Relay();
 }
-void Clear() { for(auto& p:peers) { Remove(p.avatar);Remove(p.ship); }peers.clear();RetryCleanup();announced=false;announcedShip[0]=0;shipId=0;ResetRelay(); }
+void Clear() { havePreviousSent=false;for(auto& p:peers) { Remove(p.avatar);Remove(p.ship); }peers.clear();RetryCleanup();announced=false;announcedShip[0]=0;shipId=0;ResetRelay(); }
 Peer* Find(uint64_t id) { for(auto& p:peers) if(p.id==id) return &p;return nullptr; }
 // The session roster. sco.net 1.0 sessions hold at most SCO_NET_MAX_PEERS; a larger one answers SCO_TOO_MANY with the member count,
 // and the call is repeated with room for all of them. Bounded: at most kMaxMembers entries and kMemberTries calls. Any other answer,
@@ -228,7 +278,9 @@ Peer* Add(uint64_t id) {
 }
 void IngestPose(uint64_t sender,const mpwire::Pose& next) {
     Peer* p=Add(sender);if(!p) return;
-    p->track.Add(next,Now()); // a pose that is not newer is dropped; a silence, a teleport or other frames start the track over
+    const uint64_t arrival=Now();
+    if(next.version==mpwire::kPoseVersion) p->track.Add(next,arrival,next.senderMs);
+    else p->track.Add(next,arrival);
 }
 void OnPose(uint64_t sender,const void* data,uint32_t len,void*) {
     mpwire::Pose next{};if(!mpwire::DecodePose(data,len,next)) return;
@@ -454,7 +506,7 @@ sco_result Leave(const sco_arg*,uint32_t nargs,void*,char* out,uint32_t cap) {
     if(nargs) return SCO_BAD_ARG;
     if(Active()) { SendDespawn(mpwire::kAvatar);SendDespawn(mpwire::kShip); }
     const sco_result result=METHOD(broker,leave)?broker->leave(self):SCO_UNAVAILABLE;
-    Clear();std::snprintf(out,cap,"%s",result==SCO_OK?"Left private session; ghost cleanup initiated":"Leave unavailable: G13 absent/admission refused or another owner");return result;
+    Clear();Wipe(cfg.pass,sizeof(cfg.pass));std::snprintf(out,cap,"%s",result==SCO_OK?"Left private session; ghost cleanup initiated":"Leave unavailable: G13 absent/admission refused or another owner");UpdatePanel();return result;
 }
 sco_result GoTo(const sco_arg* args,uint32_t nargs,void*,char* out,uint32_t cap) {
     if(nargs!=1 || !args || args[0].type!=SCO_ARG_STRING || !args[0].v.s) return SCO_BAD_ARG;
@@ -489,6 +541,9 @@ void PanelEvent(const char* id,const sco_widget_event* e,void*) {
         if(e->node_id==1) Control(true);else if(e->node_id==2) Control(false);
         else if(e->node_id==3) Leave(nullptr,0,nullptr,reply,sizeof(reply));
         else if(e->node_id==13) GoTo(nullptr,0,nullptr,reply,sizeof(reply));
+        else if(e->node_id==19) std::snprintf(reply,sizeof(reply),"%s",SaveProfile()==SCO_OK?"Server profile saved":"Server profile not saved (empty address, storage unavailable or full)");
+    } else if(e->kind==SCO_WIDGET_COMBO && e->node_id==18) {
+        SelectProfile(e->index);
     } else if(e->kind==SCO_WIDGET_TEXT_INPUT && e->text) {
         if(e->node_id==4) save=Text(cfg.name,e->text);
         else if(e->node_id==5) save=Text(cfg.address,e->text);
@@ -509,10 +564,10 @@ void UpdatePanel() {
     const auto state=State();char note[128];RelayNote(note,sizeof(note));
     char status[256];std::snprintf(status,sizeof(status),"G13 %s; state %u; %zu peers%s, %zu cleanup pending",METHOD(broker,request_host)?"ready":"unavailable",state.state,peers.size(),note,cleanup.size());
     std::vector<std::string> peerText;std::vector<const char*> rows;
-    for(const auto& p:peers) { char s[200];std::snprintf(s,sizeof(s),"%s: %s; avatar %s, ship %s",p.name,p.track.Valid()?"pose observed":"waiting for pose",p.avatar.id?"owned ghost":"not shown",p.ship.id?"owned ghost":"not shown");peerText.emplace_back(s); }
+    for(const auto& p:peers) { char s[200];std::snprintf(s,sizeof(s),"%s: %s; avatar %s, ship %s",p.name,p.track.Valid()?(p.track.EstimatedMotion()?"pose observed (estimated motion, v1)":"pose observed (v2 motion)"):"waiting for pose",p.avatar.id?"owned ghost":"not shown",p.ship.id?"owned ghost":"not shown");peerText.emplace_back(s); }
     for(const auto& s:peerText) rows.push_back(s.c_str());
-    sco_widget_node nodes[17]{};
-    for(unsigned i=0;i<17;++i) { nodes[i].size=sizeof(nodes[i]);nodes[i].id=i+1;nodes[i].kind=SCO_WIDGET_LABEL; }
+    sco_widget_node nodes[19]{};
+    for(unsigned i=0;i<19;++i) { nodes[i].size=sizeof(nodes[i]);nodes[i].id=i+1;nodes[i].kind=SCO_WIDGET_LABEL; }
     for(unsigned i=0;i<3;++i) nodes[i].kind=SCO_WIDGET_BUTTON;
     nodes[0].label="Host private session";nodes[1].label="Join private session";nodes[2].label="Leave";
     for(unsigned i:{3u,4u,5u,8u}) nodes[i].kind=SCO_WIDGET_TEXT_INPUT;
@@ -528,7 +583,14 @@ void UpdatePanel() {
     nodes[13].label=reply;nodes[14].label="No socket at load. Default loopback; host must explicitly configure private LAN bind + exact peers. Offline/EAC admission required.";
     nodes[15].kind=SCO_WIDGET_LIST;nodes[15].label="Other players";nodes[15].items=rows.empty()?nullptr:rows.data();nodes[15].item_count=static_cast<uint32_t>(rows.size());nodes[15].index=-1;
     nodes[16].label="Visual co-presence only: no shared physics, damage, missions or inventory. No auto-retry or internet allowlist.";
-    panelLive=widgets->set_panel(self,panelId,"Multiplayer",nodes,17,sizeof(nodes[0]),PanelEvent,nullptr)==SCO_OK;
+    std::array<std::string,kProfiles> profileLabels;std::array<const char*,kProfiles> profileItems{};
+    for(unsigned i=0;i<kProfiles;++i) { char text[48];std::snprintf(text,sizeof(text),"%s%s%d",profiles[i].address[0]?profiles[i].address:"Empty slot ",profiles[i].address[0]?":":"",profiles[i].address[0]?profiles[i].port:static_cast<int>(i+1));profileLabels[i]=text;profileItems[i]=profileLabels[i].c_str(); }
+    nodes[17].kind=SCO_WIDGET_COMBO;nodes[17].label="Saved servers";nodes[17].items=profileItems.data();nodes[17].item_count=kProfiles;nodes[17].index=selectedProfile;
+    nodes[18].kind=SCO_WIDGET_BUTTON;nodes[18].label="Save server profile";
+    sco_widget_node_1_2 tagged[19]{};
+    const char* tags[]={"host","join","leave","name","address","passphrase","host-port","join-port","avatar","ships","remember","status","goto","reply","notice","players","scope","profiles","save-profile"};
+    for(unsigned i=0;i<19;++i) { tagged[i].base.base=nodes[i];tagged[i].base.base.size=sizeof(tagged[i]);tagged[i].tag=tags[i]; }
+    panelLive=widgets->set_panel(self,panelId,"Multiplayer",&tagged[0].base.base,19,sizeof(tagged[0]),PanelEvent,nullptr)==SCO_OK;
 }
 void Tick(const char*,const void*,void*) {
     Services();RetryCleanup();
@@ -538,8 +600,16 @@ void Tick(const char*,const void*,void*) {
     if(!lastSend || now-lastSend>=100) {
         lastSend=now;mpwire::Pose pose{};
         if(Capture(pose) && METHOD(net,send_channel)) {
+            pose.senderMs=Now();
+            if(havePreviousSent && pose.senderMs>previousSent.senderMs && pose.senderMs-previousSent.senderMs<=mpmotion::kStaleMs && mpmotion::SameFrame(previousSent,pose)) {
+                const double dt=(pose.senderMs-previousSent.senderMs)/1000.0;
+                double speed2=0, v[3];
+                for(unsigned i=0;i<3;++i) { v[i]=(pose.lv[0].pos[i]-previousSent.lv[0].pos[i])/dt;speed2+=v[i]*v[i]; }
+                if(speed2<=mpmotion::kTeleportSpeed*mpmotion::kTeleportSpeed)
+                    for(unsigned i=0;i<3;++i) pose.velocity[i]=static_cast<float>(v[i]);
+            }
             uint8_t data[mpwire::kMaxPose];size_t len=mpwire::EncodePose(pose,data,sizeof(data));
-            if(len) SendPose(pose,data,len);
+            if(len) { SendPose(pose,data,len);previousSent=pose;havePreviousSent=true; }
         }
         Announce(false);
     }
@@ -562,7 +632,7 @@ SCO_EXPORT const sco_plugin_info* sco_plugin_query() { return &info; }
 SCO_EXPORT sco_result sco_plugin_load(const sco_api* a,sco_plugin* s) {
     if(!a || !s || a->major!=SCO_API_MAJOR || !METHOD(a,register_command) || !METHOD(a,subscribe) || !METHOD(a,unsubscribe)) return SCO_BAD_ARG;
     api=a;self=s;Services();net=Query<sco_net_v1>(SCO_NET_NAME,SCO_NET_VERSION_1_0);
-    store=Query<sco_storage_v1>(SCO_STORAGE_NAME,SCO_STORAGE_VERSION_1_0);widgets=Query<sco_widgets_v1>(SCO_WIDGETS_NAME,SCO_WIDGETS_VERSION_1_0);LoadSettings();
+    store=Query<sco_storage_v1>(SCO_STORAGE_NAME,SCO_STORAGE_VERSION_1_1);widgets=Query<sco_widgets_v1>(SCO_WIDGETS_NAME,SCO_WIDGETS_VERSION_1_2);LoadSettings();LoadProfiles();
     const char* names[]={"multiplayer.status","multiplayer.leave","multiplayer.goto"};const sco_command_fn callbacks[]={Status,Leave,GoTo};
     sco_arg_def who{};who.name="player";who.type=SCO_ARG_STRING;
     sco_result r=SCO_OK;

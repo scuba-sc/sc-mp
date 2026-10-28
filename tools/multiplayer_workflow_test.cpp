@@ -36,12 +36,15 @@ std::map<std::string,sco_command> commands;
 std::map<std::string,sco_event_fn> events;
 std::map<std::string,sco_net_on_message> messages;
 std::map<std::string,std::string> db,prior;
+std::string failGetKey;
 unsigned hostCalls=0,joinCalls=0,leaveCalls=0,spawnCalls=0,removeCalls=0,transformCalls=0,sendCalls=0;
-bool brokerPresent=true,networkActive=false,admitted=true,inTx=false;
+bool brokerPresent=true,networkActive=false,admitted=true,inTx=false,widgetsPresent=true,storagePresent=true,failPut=false;
+uint32_t widgetVersion=0,storageVersion=0;
 uint32_t state=0,memberTotal=2,getPeersCalls=0;
 sco_widget_event_fn panelCallback=nullptr;
 bool maskSeen=false,rememberSeen=false,hostSeen=false,joinSeen=false,panelRemoved=false;
-std::string passInPanel;
+std::string passInPanel,addressInPanel;
+int profileIndex=-1;
 namespace rw=sco::relay::wire;
 uint64_t selfId=1;                               // this player's peer id in the synthetic session
 std::vector<uint64_t> members={1,2};             // the session's peers, self among them
@@ -64,22 +67,28 @@ sco_result Register(sco_plugin* s,const sco_command* c) {
 sco_result Subscribe(sco_plugin*,const char* event,sco_event_fn fn,void*) { events[event]=fn;return SCO_OK; }
 sco_result Unsubscribe(sco_plugin*,const char* event,sco_event_fn) { events.erase(event);return SCO_OK; }
 sco_result SetPanel(sco_plugin* s,const char* id,const char*,const sco_widget_node* nodes,uint32_t n,uint32_t stride,sco_widget_event_fn cb,void*) {
-    if(s!=owner || std::strcmp(id,"multiplayer.session") || stride!=sizeof(*nodes)) return SCO_BAD_ARG;
+    if(s!=owner || std::strcmp(id,"multiplayer.session") || stride!=sizeof(sco_widget_node_1_2)) return SCO_BAD_ARG;
     panelCallback=cb;hostSeen=joinSeen=maskSeen=rememberSeen=false;
     for(uint32_t i=0;i<n;++i) {
-        if(nodes[i].id==1 && nodes[i].kind==SCO_WIDGET_BUTTON) hostSeen=true;
-        if(nodes[i].id==2 && nodes[i].kind==SCO_WIDGET_BUTTON) joinSeen=true;
-        if(nodes[i].id==6) { maskSeen=(nodes[i].flags&SCO_WIDGET_PASSWORD)!=0;passInPanel=nodes[i].text; }
-        if(nodes[i].id==11) rememberSeen=nodes[i].value!=0;
-        if(nodes[i].id==12) panelStatus=nodes[i].label;
-        if(nodes[i].id==14) panelReply=nodes[i].label;
-        if(nodes[i].id==16) { panelRows.clear();for(uint32_t j=0;j<nodes[i].item_count;++j) panelRows.emplace_back(nodes[i].items[j]); }
+        const auto* ext=reinterpret_cast<const sco_widget_node_1_2*>(reinterpret_cast<const char*>(nodes)+i*stride);
+        CHECK(ext->base.base.size==sizeof(*ext) && ext->tag && *ext->tag);
+        const sco_widget_node* node=&ext->base.base;
+        if(node->id==1 && node->kind==SCO_WIDGET_BUTTON) hostSeen=true;
+        if(node->id==2 && node->kind==SCO_WIDGET_BUTTON) joinSeen=true;
+        if(node->id==5) addressInPanel=node->text;
+        if(node->id==6) { maskSeen=(node->flags&SCO_WIDGET_PASSWORD)!=0;passInPanel=node->text; }
+        if(node->id==11) rememberSeen=node->value!=0;
+        if(node->id==12) panelStatus=node->label;
+        if(node->id==14) panelReply=node->label;
+        if(node->id==16) { panelRows.clear();for(uint32_t j=0;j<node->item_count;++j) panelRows.emplace_back(node->items[j]); }
+        if(node->id==18) profileIndex=node->index;
     }
     return SCO_OK;
 }
 sco_result RemovePanel(sco_plugin*,const char*) { panelCallback=nullptr;panelRemoved=true;return SCO_OK; }
-sco_result Put(sco_plugin*,const char* key,const void* value,uint32_t size) { db[key]=std::string(static_cast<const char*>(value),size);return SCO_OK; }
+sco_result Put(sco_plugin*,const char* key,const void* value,uint32_t size) { if(failPut && std::strstr(key,".port")) return SCO_UNAVAILABLE;db[key]=std::string(static_cast<const char*>(value),size);return SCO_OK; }
 sco_result Get(sco_plugin*,const char* key,void* out,uint32_t* size) {
+    if(failGetKey==key) return SCO_UNAVAILABLE;
     auto it=db.find(key);if(it==db.end()) { *size=0;return SCO_NOT_FOUND; }
     const auto needed=static_cast<uint32_t>(it->second.size());if(*size<needed) { *size=needed;return SCO_TOO_MANY; }
     std::memcpy(out,it->second.data(),needed);*size=needed;return SCO_OK;
@@ -143,11 +152,11 @@ double lastGhostX=0;
 sco_result Transform(sco_plugin* s,uint64_t id,uint64_t z,const double p[3],const double[4]) { CHECK(s==owner && id>=101 && z==7);++transformCalls;lastGhostX=p[0];return SCO_OK; }
 sco_net_v1 net{};sco_widgets_v1 widgets{};sco_storage_v1 storage{};sc_private_session_v1 broker{};
 sc_spatial_v1 spatial{};sc_game_spatial_v1 poses{};sc_actors_v1 actors{};sc_entities_v1 entities{};
-sco_result Query(const char* name,uint32_t,const void** out) {
+sco_result Query(const char* name,uint32_t version,const void** out) {
     *out=nullptr;
     if(!std::strcmp(name,SCO_NET_NAME)) *out=&net;
-    else if(!std::strcmp(name,SCO_WIDGETS_NAME)) *out=&widgets;
-    else if(!std::strcmp(name,SCO_STORAGE_NAME)) *out=&storage;
+    else if(!std::strcmp(name,SCO_WIDGETS_NAME)) { widgetVersion=version;if(widgetsPresent && version==SCO_WIDGETS_VERSION_1_2) *out=&widgets; }
+    else if(!std::strcmp(name,SCO_STORAGE_NAME)) { storageVersion=version;if(storagePresent && version==SCO_STORAGE_VERSION_1_1) *out=&storage; }
     else if(!std::strcmp(name,SC_PRIVATE_SESSION_NAME) && brokerPresent) *out=&broker;
     else if(!std::strcmp(name,SC_SPATIAL_SERVICE_NAME)) *out=&spatial;
     else if(!std::strcmp(name,SC_GAME_SPATIAL_NAME)) *out=&poses;
@@ -157,7 +166,7 @@ sco_result Query(const char* name,uint32_t,const void** out) {
 }
 void UI(uint32_t id,uint32_t kind,const char* text=nullptr,double value=0) {
     CHECK(panelCallback!=nullptr);if(!panelCallback) return;
-    sco_widget_event event{};event.size=sizeof(event);event.node_id=id;event.kind=kind;event.text=text;event.value=value;
+    sco_widget_event event{};event.size=sizeof(event);event.node_id=id;event.kind=kind;event.text=text;event.value=value;event.index=static_cast<int32_t>(value);
     panelCallback("multiplayer.session",&event,nullptr);
 }
 void Tick() { CHECK(events.count("tick"));if(events.count("tick")) events["tick"]("tick",nullptr,nullptr); }
@@ -212,6 +221,7 @@ int main(int argc,char** argv) {
     db={{"name","Pilot"},{"join_address","127.0.0.1"},{"host_port","64091"},{"join_port","64091"},{"show_ships","1"},{"remember_passphrase","0"},{"passphrase","ignored stale synthetic secret"}};
     CHECK(load(nullptr,owner)==SCO_BAD_ARG);
     CHECK(load(&api,owner)==SCO_OK);CHECK(commands.size()==3 && messages.size()==5 && events.size()==3);
+    CHECK(widgetVersion==SCO_WIDGETS_VERSION_1_2 && storageVersion==SCO_STORAGE_VERSION_1_1);
     CHECK(hostSeen && joinSeen && maskSeen && !rememberSeen && passInPanel.empty());
     CHECK(hostCalls==0 && joinCalls==0 && sendCalls==0);Tick();CHECK(hostCalls==0 && joinCalls==0);
     char output[512];sco_arg who{};who.type=SCO_ARG_STRING;who.v.s="Remote";
@@ -228,6 +238,15 @@ int main(int argc,char** argv) {
     mpwire::Pose pose{};pose.seq=1;pose.levels=1;std::snprintf(pose.lv[0].name,sizeof(pose.lv[0].name),"Synthetic_Zone");pose.lv[0].rot[3]=1;pose.lv[0].pos[0]=3;
     len=mpwire::EncodePose(pose,data,sizeof(data));messages.at("multiplayer.pose")(2,data,static_cast<uint32_t>(len),nullptr);
     Tick();CHECK(spawnCalls==1 && transformCalls>=1);
+    // The same peer can switch from a v2 sender to a legacy v1 sender without
+    // retaining the old timing track or rejecting the old wire format.
+    pose.seq=2;pose.lv[0].pos[0]=12;
+    len=mpwire::EncodePose(pose,data,sizeof(data));
+    Bytes legacy(data,data+len);legacy[0]=1;legacy.erase(legacy.begin()+8,legacy.begin()+28);
+    Deliver("multiplayer.pose",2,legacy);Tick();CHECK(lastGhostX==12);
+    pose.seq=3;pose.lv[0].pos[0]=18;
+    len=mpwire::EncodePose(pose,data,sizeof(data));Deliver("multiplayer.pose",2,Bytes(data,data+len));
+    Tick();CHECK(lastGhostX==18);
     data[0]=99;messages.at("multiplayer.pose")(2,data,static_cast<uint32_t>(len),nullptr);Tick();CHECK(spawnCalls==1);
     len=mpwire::EncodeDespawn(mpwire::kAvatar,mpwire::SessionId(2,mpwire::kAvatar),data,sizeof(data));CHECK(len==16);
     messages.at("multiplayer.despawn")(2,data,static_cast<uint32_t>(len),nullptr);CHECK(removeCalls==1);
@@ -243,12 +262,49 @@ int main(int argc,char** argv) {
         commands.at("multiplayer.status").fn(nullptr,0,nullptr,output,sizeof(output));CHECK(others(3));
         memberTotal=2;
     }
+    UI(6,SCO_WIDGET_TEXT_INPUT,"secret before command leave");
+    CHECK(!panelRows.empty() && !passInPanel.empty());
     CHECK(commands.at("multiplayer.leave").fn(nullptr,0,nullptr,output,sizeof(output))==SCO_OK);CHECK(!networkActive);
+    CHECK(panelRows.empty() && passInPanel.empty() && panelStatus.find("0 peers")!=std::string::npos);
     UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(2,SCO_WIDGET_BUTTON);CHECK(joinCalls==1 && passInPanel.empty());
-    UI(11,SCO_WIDGET_TOGGLE,nullptr,1);UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic remembered passphrase");UI(3,SCO_WIDGET_BUTTON);UI(1,SCO_WIDGET_BUTTON);
-    CHECK(db.at("remember_passphrase")=="1" && db.at("passphrase")=="synthetic remembered passphrase" && rememberSeen);
+    UI(11,SCO_WIDGET_TOGGLE,nullptr,1);UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic remembered passphrase");UI(1,SCO_WIDGET_BUTTON);
+    CHECK(rememberSeen);UI(19,SCO_WIDGET_BUTTON);CHECK(db.count("profile0.address") && db.at("profile0.address")=="127.0.0.1");
+    UI(5,SCO_WIDGET_TEXT_INPUT,"127.0.0.2");{ const auto before=db;failPut=true;UI(19,SCO_WIDGET_BUTTON);failPut=false;CHECK(db==before && !inTx); }UI(18,SCO_WIDGET_COMBO,nullptr,0);CHECK(passInPanel=="synthetic remembered passphrase");
+    UI(3,SCO_WIDGET_BUTTON);CHECK(passInPanel.empty());
     UI(11,SCO_WIDGET_TOGGLE,nullptr,0);CHECK(!db.count("passphrase"));
     unload();CHECK(panelRemoved && messages.empty() && events.empty());unload();
+    Reset();CHECK(load(&api,owner)==SCO_OK);UI(18,SCO_WIDGET_COMBO,nullptr,0);CHECK(passInPanel=="synthetic remembered passphrase");unload();
+    { // A failed read must never turn a populated slot into an overwrite target.
+        Reset();const auto before=db;failGetKey="profile0.address";CHECK(load(&api,owner)==SCO_OK);
+        UI(5,SCO_WIDGET_TEXT_INPUT,"127.0.0.9");UI(19,SCO_WIDGET_BUTTON);CHECK(db.at("profile0.address")==before.at("profile0.address"));
+        failGetKey.clear();unload();
+    }
+    { // Selection must not alter the current secret on transient read failure.
+        Reset();CHECK(load(&api,owner)==SCO_OK);UI(6,SCO_WIDGET_TEXT_INPUT,"current secret");
+        UI(5,SCO_WIDGET_TEXT_INPUT,"127.0.0.7");const int beforeIndex=profileIndex;
+        failGetKey="profile0.pass";UI(18,SCO_WIDGET_COMBO,nullptr,0);CHECK(passInPanel=="current secret" && addressInPanel=="127.0.0.7" && profileIndex==beforeIndex);
+        CHECK(panelReply.find("could not be read")!=std::string::npos);
+        failGetKey.clear();unload();
+    }
+    { // Bad or unavailable ports and oversized addresses cannot be reused as empty slots.
+        const auto saved=db;
+        for(const auto& failure:{std::string("port-error"),std::string("bad-port"),std::string("long-address")}) {
+            db=saved;Reset();
+            if(failure=="port-error") failGetKey="profile0.port";
+            else if(failure=="bad-port") db["profile0.port"]="invalid";
+            else db["profile0.address"]=std::string(300,'x');
+            CHECK(load(&api,owner)==SCO_OK);const auto original=db.at("profile0.address");
+            UI(5,SCO_WIDGET_TEXT_INPUT,"127.0.0.8");UI(19,SCO_WIDGET_BUTTON);CHECK(db.at("profile0.address")==original);
+            failGetKey.clear();unload();
+        }
+        db=saved;
+    }
+    { // A genuinely missing passphrase selects the profile with an empty secret.
+        const auto saved=db;db.erase("profile0.pass");Reset();CHECK(load(&api,owner)==SCO_OK);
+        UI(6,SCO_WIDGET_TEXT_INPUT,"current secret");UI(18,SCO_WIDGET_COMBO,nullptr,0);
+        CHECK(passInPanel.empty() && !rememberSeen && profileIndex==0);unload();db=saved;
+    }
+    Reset();widgetsPresent=false;storagePresent=false;CHECK(load(&api,owner)==SCO_OK);CHECK(!panelCallback && commands.size()==3);unload();widgetsPresent=storagePresent=true;
     Reset();brokerPresent=false;const unsigned priorHosts=hostCalls;
     CHECK(load(&api,owner)==SCO_OK);CHECK(commands.size()==3 && maskSeen);UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");UI(1,SCO_WIDGET_BUTTON);CHECK(hostCalls==priorHosts);
     CHECK(commands.at("multiplayer.leave").fn(nullptr,0,nullptr,output,sizeof(output))==SCO_UNAVAILABLE);

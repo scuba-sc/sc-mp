@@ -24,21 +24,28 @@ fallback. Host source retains the inactive old implementation for later cleanup.
   admission loss and owner unload close the session. Broker authenticates joins,
   bounds peers/messages/rates and audit-logs its lifecycle without credentials.
 - Passphrase minimum is 12 bytes. The panel masks input with the additive
-  `SCO_WIDGET_PASSWORD` flag; remembering defaults false. After Host/Join an
-  unremembered plugin/UI credential is cleared. Masking is display protection,
-  not encrypted memory or storage. The public widget service copies text and
-  native plugins run with host rights. Remembering explicitly stores plaintext
-  in the existing optional DB key and displays a warning; disable it to delete
-  the key transactionally. User DBs are never copied into release resources.
+  `SCO_WIDGET_PASSWORD` flag; remembering defaults false. Leave clears the
+  plugin's current credential. Masking is display protection, not encrypted
+  memory or storage. The widget service copies text and native plugins have
+  host rights. Explicitly saving a profile with remembering enabled writes its
+  passphrase in plaintext to the optional local DB. To remove it, select the
+  profile, turn remembering off, and save the same profile again. Host-side
+  transient copies and database backups are outside the plugin's control.
 
 ## Settings compatibility
 
-Owner remains **`multiplayer`**, database **`data/storage/multiplayer.db`**. Reuse
-`name`, `join_address`, `avatar_class`, `host_port`, `join_port`, `show_ships`,
-`remember_passphrase`, optionally `passphrase`. Integer values remain decimal
-text; all writes are in one public `sco.storage` transaction. Do not rename,
-truncate or erase existing databases. With no storage, settings remain in memory
-and the panel reports save failure. There is no import of host files or secrets.
+Owner remains **`multiplayer`**, database **`data/storage/multiplayer.db`**. Global
+settings retain `name`, `join_address`, `avatar_class`, `host_port`, `join_port`,
+`show_ships` and `remember_passphrase`. The legacy global `passphrase` is not
+loaded and is deleted on the next successful settings save. Up to eight saved
+server profiles are keyed by address text and join port. Save is explicit and
+transactional; an existing address/port replaces that profile. Select a profile
+in the panel to restore its address, port and optional passphrase; selecting it
+never connects. Profiles are not automatically removed on Leave. Storage 1.1
+is optional; without it, saves fail and session settings remain in memory.
+Widgets 1.2 is optional; without it the panel is absent and the plugin still
+loads. The host must actually render retained panels for these controls to be
+reachable. No host files or secrets are imported.
 
 ## Explicit LAN host policy
 
