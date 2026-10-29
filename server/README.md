@@ -191,9 +191,10 @@ When `check-net-boundary.sh` or the build fails after a kit change, do this in o
 ## What is not here
 
 These stay in the contributor's standalone relay and can come in later, separate pull requests: the fake-player rig
-and its tests, the 50-player test build, the deploy kit (install script, systemd unit, container image), the
-measurement tools, and the long architecture and report documents. Windows relay builds and tests are already
-supported.
+and its tests, the 50-player test build, the measurement tools, and the long architecture and report documents.
+The install kit for Linux (an install script and a systemd unit) is in [deploy/](deploy/README.md); there is no
+container image, no release binary (the kit builds from source on the machine that runs the relay) and no Windows
+installer. Windows relay builds and tests are already supported.
 
 ## Files
 
