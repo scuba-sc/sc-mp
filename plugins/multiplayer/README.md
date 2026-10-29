@@ -70,11 +70,41 @@ authorize G13 and are never imported into broker policy. Existing launcher
 firewall allowances are not broker admission or a guarantee of reachability.
 Actual interface/firewall behavior still requires owner Windows acceptance.
 
-**Current production-shell blocker:** its G1 inspector still reports live
-session/effective official-network evidence Unknown; it does not certify these
-from launcher flags or offline patch success. G13 therefore refuses in that
-shell until a positively grounded admission collector is provided. No bypass or
-invented evidence was added to make this feature appear live.
+**Admission in the production shell** (from reading the source at the commits linked here; not run in game). The
+shell does not report a fixed Unknown. It answers the host's admission check from live reads of the Windows Firewall
+rules and the TCP table: sc-offline builds the check in
+[`src/dllmain.cpp` lines 250 to 259](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/src/dllmain.cpp#L250-L259)
+and passes it to the host kit at
+[line 430](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/src/dllmain.cpp#L430),
+and sco-core gives G13 that same check
+([`src/game/host.cpp` line 154](https://github.com/scuba-sc/sco-core/blob/844e136ccb280ad8cb43f73bc43c9447e8f6799d/src/game/host.cpp#L154)).
+The check passes only when the session reads offline and anti-cheat, the target process and the official network all
+read Clear ([`host.cpp` lines 46 to 52](https://github.com/scuba-sc/sco-core/blob/844e136ccb280ad8cb43f73bc43c9447e8f6799d/src/game/host.cpp#L46-L52));
+otherwise the host refuses ([line 121](https://github.com/scuba-sc/sco-core/blob/844e136ccb280ad8cb43f73bc43c9447e8f6799d/src/game/host.cpp#L121))
+and the shell skips its offline start-up
+([`dllmain.cpp` line 273](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/src/dllmain.cpp#L273)).
+sc-offline's own status notes record `officialNetwork=Clear` in two runs of v0.7.8.1
+([`docs/status.md` lines 13 to 15](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/docs/status.md#L13-L15)) and say
+the shell has reported network evidence from live firewall and connection reads since then
+([line 40](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/docs/status.md#L40)).
+So an earlier version of this README, which said G13 always refuses in that shell, no longer matches the source.
+What a given PC's reads find is not known from here.
+
+One setting makes the official network read Unknown by construction. It reads Clear only when the firewall's blocked set
+covers every IPv4 address except 10/8, 127/8, 169.254/16, 172.16/12 and 192.168/16
+([`src/admission_evidence.h` lines 329 to 334](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/src/admission_evidence.h#L329-L334)
+and [414 to 416](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/src/admission_evidence.h#L414-L416)),
+and the launcher leaves the `multiplayer_allow` ranges open in the `StarCitizen.exe` block rule
+([`launcher/launcher.cpp` lines 2017 to 2030](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/launcher/launcher.cpp#L2017-L2030)).
+A range outside those five that is allowed there, such as a VPN's `100.64.0.0/10`, is not covered, so the check reads
+Unknown at start-up. The host then refuses (`host.cpp` line 121, which leaves it idle), the shell tries three times and
+gives up
+([`dllmain.cpp` lines 436 to 450](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/src/dllmain.cpp#L436-L450)),
+and it returns from its offline start-up before applying any patch (line 273 above). The host kit is started only from
+the prepared state
+([`dllmain.cpp` lines 534 to 535](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/src/dllmain.cpp#L534-L535)),
+and that start is what hands G13 its admission check (`host.cpp` line 154 above), so as far as this reading shows no
+Host or Join is offered at all in that case. No bypass or invented evidence was added to this plugin.
 
 ## Co-presence, not shared simulation
 
@@ -194,8 +224,8 @@ roster has been read.
 
 **Not run in game.** The workflow test, the relay-join test (synthetic game providers on a real
 `sco::net::Core` joining a real sco-relay over loopback UDP) and the Windows build are the only evidence;
-no real game, EAC, admission collector or LAN was involved. The production-shell admission blocker above
-is unchanged: until a positively grounded admission collector exists, that shell refuses Host and Join.
+no real game, EAC, admission collector or LAN was involved. What the production shell's admission check reads on a
+real PC is not known from here; "Admission in the production shell" above is from reading the source only.
 
 ## Text chat
 
@@ -331,14 +361,29 @@ as described above. `multiplayer-motion-test --track-tests` runs only these buff
 
 ## Tester cases (all **not run in game**)
 
-The production shell refuses Host and Join until an admission collector exists (above), so every case
-that needs a connection needs a shell that grants admission. Report what `mod.log` says.
+Every case that needs a connection needs a shell whose admission check reads Clear at start-up (see "Admission in the
+production shell" above: a check that reads Unknown then ends the offline start-up, and no Host or Join is offered).
+Report what `mod.log` says.
 
 1. Start the game with the module installed and do nothing: no `[multiplayer]` line, no socket, **Join**
    has not been pressed.
-2. In the production shell (admission Unknown) press **Join** with a sco-relay server's address and
-   passphrase: the panel says `Join request refused (1)` and `mod.log` has `join request refused (1)`;
-   nothing is sent. Same with EAC running.
+2. Admission evidence that stops reading Clear after start-up. EAC starts: the shell reads a running EAC process
+   ([`dllmain.cpp` lines 134 to 136](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/src/dllmain.cpp#L134-L136))
+   or a service that is not stopped
+   ([line 153](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/src/dllmain.cpp#L153))
+   as anti-cheat Present
+   ([line 188](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/src/dllmain.cpp#L188)),
+   not Unknown. The firewall service stops answering: the official network reads Unknown
+   ([`admission_evidence.h` lines 393 to 399](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/src/admission_evidence.h#L393-L399)).
+   The host's check passes only when anti-cheat and the official network both read Clear
+   ([`host.cpp` lines 49 to 50](https://github.com/scuba-sc/sco-core/blob/844e136ccb280ad8cb43f73bc43c9447e8f6799d/src/game/host.cpp#L49-L50)),
+   so either way Host and Join are expected to be refused. G13 is handed that same check
+   ([`host.cpp` line 154](https://github.com/scuba-sc/sco-core/blob/844e136ccb280ad8cb43f73bc43c9447e8f6799d/src/game/host.cpp#L154))
+   and the shell re-inspects it on every tick
+   ([`dllmain.cpp` lines 538 to 540](https://github.com/scuba-sc/sc-offline/blob/96686b95adc2e07e4cf3d0db15c4ec3a79cb1a8e/src/dllmain.cpp#L538-L540)).
+   Press **Join** with a sco-relay server's address and passphrase and report what the panel and `mod.log` say: a refused
+   request (`Join request refused (N)` in the panel, `join request refused (N)` in `mod.log`) or a session closed by the loss
+   of admission is what the source suggests. Nothing is sent either way.
 3. In a shell that grants admission: **Join**. Expect `join request accepted: waiting for the session (0)`,
    then within the server's announce interval `relay server found: ...` and `joined relay server as peer P in slot S (generation G): ...`.
 4. Two players on the server: each sees one ghost, the panel lists one other player, and the server is not in the list.
