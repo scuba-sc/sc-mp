@@ -9,8 +9,8 @@ generation. The current implementation is protocol generation 2. It has not been
 | Mode | Current behavior | Authority and limits |
 | --- | --- | --- |
 | Local single-player | No `game.private_session` is active. The multiplayer plugin has no session to join and does not open a socket. | The local game process owns its own world. sc-mp adds no network state. |
-| Listen-host co-presence | The game host requests a private session through `sc_private_session_v1`; its `sco.net` peer id is 1. Other game processes join with explicit local consent. | The host owns admission and the session transport. Every game still simulates its own world. sc-mp sends bounded poses and spawn/despawn notices so each process can render local ghosts. It does not make the listen host authoritative for another player's physics, inventory, missions, or damage. |
-| Headless dedicated relay | `sco-relay` hosts the transport session as peer 1. It authenticates the shared passphrase, tracks a roster, forwards messages, and can optionally route nearby poses. | It has no game process, world, or simulation authority. Its `multiplayer.relay` roster lists players only. The relay is not a player and does not create ghosts. A relay process has at most 15 players because the transport session has 16 seats including peer 1. |
+| Listen-host co-presence | The game host requests a private session through `sc_private_session_v1`; its `sco.net` peer id is 1. Other game processes join with explicit local consent. | The host owns admission and the session transport. Every game still simulates its own world. sc-mp sends bounded poses, spawn/despawn notices and short plain-text chat lines (not encrypted) so each process can render local ghosts and show what players say. It does not make the listen host authoritative for another player's physics, inventory, missions, or damage. |
+| Headless dedicated relay | `sco-relay` hosts the transport session as peer 1. It authenticates the shared passphrase, tracks a roster, forwards messages (chat lines too, which the program never reads or logs), and can optionally route nearby poses. | It has no game process, world, or simulation authority. Its `multiplayer.relay` roster lists players only. The relay is not a player and does not create ghosts. A relay process has at most 15 players because the transport session has 16 seats including peer 1. |
 | Authoritative dedicated simulation | Not implemented. | This would need a game-side simulation provider and explicit authority/state contracts. `sco-relay` cannot become that backend by forwarding packets. No MMO or official-service integration is implied. |
 
 The plugin status command and panel report the current topology from the existing private-session
@@ -47,6 +47,16 @@ labels report the protocol contract, not in-game verification.
   loss never triggers an automatic join. The host ends the private session on admission loss or
   owner unload. A relay stop clears its roster and disconnects players. Rejoining is a fresh,
   explicit request. There is no host migration, session restoration, or world snapshot today.
+
+## Text chat
+
+Chat is a co-presence feature like the ghosts, not a game feature: `multiplayer.chat` carries short plain-text lines
+between the players of a session, in listen-host mode and through a relay, with nearby-only on or off. The peer that hosts
+the session relays it through the network library, so the relay program is unchanged and protocol generation 2 stays; a
+plugin build without chat never registers the channel and receives nothing. Like all `sco.net` traffic it is
+authenticated but **not encrypted** (use a VPN). It is read only from verified players, bounded in length and rate,
+never logged or run as a command, and lasts for one session. The layout and rules are in the
+[plugin README](../plugins/multiplayer/README.md#text-chat). Not run in game; how the panel looks in game is left to testers.
 
 ## Discovery, persistence, and recovery
 
