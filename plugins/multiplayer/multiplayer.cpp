@@ -405,10 +405,14 @@ void AddChatRow(const std::string& who,const char* text) {
     if(chat.rows.size()>=mpwire::kChatHistoryRows) chat.rows.erase(chat.rows.begin());
     chat.rows.push_back(who+": "+text);
 }
-// A name another player chose may hold anything sco.net lets through; only a clean one is put in front of what they say.
+// The label in front of a line another player said. A name another player chose may hold anything sco.net lets through, so it
+// cannot be trusted to say who spoke: the label always ends in that player's peer id ("Alice #3"), which this player's own
+// "You" lines never do, and a name that is not clean text or holds ':' (the separator, which could start a second speaker) is
+// not used at all ("peer 3").
 std::string ChatName(const Peer& p) {
-    if(p.name[0] && mpwire::ChatTextOk(p.name,std::strlen(p.name))) return p.name;
-    return "peer "+std::to_string(p.id);
+    const std::string id=std::to_string(p.id);
+    if(p.name[0] && !std::strchr(p.name,':') && mpwire::ChatTextOk(p.name,std::strlen(p.name))) return std::string(p.name)+" #"+id;
+    return "peer "+id;
 }
 void OnChat(uint64_t sender,const void* data,uint32_t len,void*) {
     Peer* p=ChatSender(sender);

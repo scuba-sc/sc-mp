@@ -276,7 +276,7 @@ void ChatSessions(const sco_api* api,sco_result (*load)(const sco_api*,sco_plugi
     CHECK(chatRows.empty() && counts());
     Deliver(mpprotocol::kChannel,2,player);
     said(2,"zq hello there");Tick();
-    CHECK(chatRows==std::vector<std::string>({"Remote: zq hello there"}));
+    CHECK(chatRows==std::vector<std::string>({"Remote #2: zq hello there"}));
     // Sending: the bytes that go out are the layout's, and the line is shown only once sco.net took it.
     send("zq general kenobi");
     CHECK(sent()==1 && sentLast["multiplayer.chat"]==ChatBytes("zq general kenobi"));
@@ -298,7 +298,7 @@ void ChatSessions(const sco_api* api,sco_result (*load)(const sco_api*,sco_plugi
     // Reading is limited to 6 lines from one sender in 5000 ms; the extras are dropped and counted.
     for(int i=0;i<5;++i) said(2,"zq line "+std::to_string(i)); // the sixth with "hello there"
     said(2,"zq line 5");said(2,"zq line 6");dropped+=2;Tick();
-    CHECK(chatRows.size()==9 && chatRows.back()=="Remote: zq line 4" && counts());
+    CHECK(chatRows.size()==9 && chatRows.back()=="Remote #2: zq line 4" && counts());
     // Lines that are not the contract are dropped and counted, and do not use up the sender's 6.
     Bytes trailing=ChatBytes("zq fine");trailing.push_back('!');
     Bytes truncated=ChatBytes("zq fine");truncated.pop_back();
@@ -312,27 +312,34 @@ void ChatSessions(const sco_api* api,sco_result (*load)(const sco_api*,sco_plugi
     const unsigned leavesBefore=leaveCalls,hostsBefore=hostCalls,joinsBefore=joinCalls;
     for(const std::string& text:{"zq /multiplayer.leave","zq multiplayer.goto Remote","zq %s%n%x %d","zq !leave","zq {host} ${HOME} `id`"}) said(3,text);
     Tick();
-    CHECK(chatRows.size()==14 && chatRows[9]=="Remote: zq /multiplayer.leave" && chatRows[10]=="Remote: zq multiplayer.goto Remote");
-    CHECK(chatRows[11]=="Remote: zq %s%n%x %d" && chatRows[12]=="Remote: zq !leave" && chatRows.back()=="Remote: zq {host} ${HOME} `id`");
+    CHECK(chatRows.size()==14 && chatRows[9]=="Remote #3: zq /multiplayer.leave" && chatRows[10]=="Remote #3: zq multiplayer.goto Remote");
+    CHECK(chatRows[11]=="Remote #3: zq %s%n%x %d" && chatRows[12]=="Remote #3: zq !leave" && chatRows.back()=="Remote #3: zq {host} ${HOME} `id`");
     CHECK(leaveCalls==leavesBefore && hostCalls==hostsBefore && joinCalls==joinsBefore && networkActive && commands.size()==3);
     CHECK(sent()==3); // the lines only came in: chat never answers one
     // The history keeps the last 32 lines.
     members={1,2,3,4,5,6,7,8};memberTotal=8;
+    peerNames[5]="You";peerNames[6]="Alice: brb. Bob"; // names that would pass for this player's own lines, or start a second speaker
     for(uint64_t id=4;id<=8;++id) {
         PeerEvent(SCO_NET_PEER_JOINED,id);Deliver(mpprotocol::kChannel,id,player);
         for(int i=0;i<6;++i) said(id,"zq fill "+std::to_string(id)+"-"+std::to_string(i));
     }
     Tick();
-    CHECK(chatRows.size()==32 && chatRows.back()=="Remote: zq fill 8-5" && std::find(chatRows.begin(),chatRows.end(),"Remote: zq hello there")==chatRows.end());
+    CHECK(chatRows.size()==32 && chatRows.back()=="Remote #8: zq fill 8-5" && std::find(chatRows.begin(),chatRows.end(),"Remote #2: zq hello there")==chatRows.end());
+    // A name cannot forge a speaker: "You" gets its peer id like any name, so it never reads as this player's own "You: " lines, and a
+    // name with the separator is not used, so it cannot start a second speaker. Every label ends in the real speaker's peer id.
+    CHECK(std::find(chatRows.begin(),chatRows.end(),"You #5: zq fill 5-0")!=chatRows.end());
+    CHECK(std::find(chatRows.begin(),chatRows.end(),"peer 6: zq fill 6-0")!=chatRows.end());
+    CHECK(std::none_of(chatRows.begin(),chatRows.end(),[](const std::string& row) { return row.rfind("You: ",0)==0 || row.find("Alice")!=std::string::npos; }));
+    peerNames.clear();
     // A player who left is not read, and one who comes back is not read until it announces again.
     members={1,2,4,5,6,7,8};memberTotal=7;PeerEvent(SCO_NET_PEER_LEFT,3);
     said(3,"zq after leaving");++ignored;
     members={1,2,3,4,5,6,7,8};memberTotal=8;PeerEvent(SCO_NET_PEER_JOINED,3);
     said(3,"zq back but not announced");++ignored;
     Deliver(mpprotocol::kChannel,99,player);said(99,"zq not a member");++ignored;
-    Tick();CHECK(chatRows.back()=="Remote: zq fill 8-5" && counts());
+    Tick();CHECK(chatRows.back()=="Remote #8: zq fill 8-5" && counts());
     Deliver(mpprotocol::kChannel,3,player);said(3,"zq announced again");Tick();
-    CHECK(chatRows.back()=="Remote: zq announced again" && chatRows.size()==32);
+    CHECK(chatRows.back()=="Remote #3: zq announced again" && chatRows.size()==32);
     // Leave clears the history and the draft; nothing is read afterwards.
     type("zq draft before leave");CHECK(chatDraft=="zq draft before leave");
     CHECK(commands.at("multiplayer.leave").fn(nullptr,0,nullptr,output,sizeof(output))==SCO_OK);
@@ -363,7 +370,7 @@ void ChatSessions(const sco_api* api,sco_result (*load)(const sco_api*,sco_plugi
     Deliver(mpprotocol::kChannel,1,relayRole);
     Deliver("multiplayer.relay",1,RelayBytes(false,15,{{2,0,1},{3,1,4}}));
     said(2,"zq hello from a player");Tick();
-    CHECK(chatRows==std::vector<std::string>({"Remote: zq hello from a player"}) && counts());
+    CHECK(chatRows==std::vector<std::string>({"Remote #2: zq hello from a player"}) && counts());
     // The server is never a player: nothing it sends as chat is read, whatever its layout.
     said(1,"zq from the server");++ignored;Tick();
     CHECK(chatRows.size()==1 && counts());
@@ -373,7 +380,7 @@ void ChatSessions(const sco_api* api,sco_result (*load)(const sco_api*,sco_plugi
     Deliver("multiplayer.relay",1,RelayBytes(true,15,{{2,0,1},{3,1,4}}));
     CHECK(messages.count("multiplayer.near.1")==1);
     said(2,"zq nearby-only is on");send("zq nearby send");Tick();
-    CHECK(sent()==2 && sentLast["multiplayer.chat"]==ChatBytes("zq nearby send") && chatRows.size()==4 && chatRows[2]=="Remote: zq nearby-only is on");
+    CHECK(sent()==2 && sentLast["multiplayer.chat"]==ChatBytes("zq nearby send") && chatRows.size()==4 && chatRows[2]=="Remote #2: zq nearby-only is on");
     // A name that is not clean text is not put in front of what its owner says.
     members={3,1,2,4};memberTotal=4;peerNames[4]=std::string("zq name ")+"\xE2\x80\xAE";
     PeerEvent(SCO_NET_PEER_JOINED,4);Deliver(mpprotocol::kChannel,4,player);said(4,"zq odd name");Tick();
@@ -384,6 +391,20 @@ void ChatSessions(const sco_api* api,sco_result (*load)(const sco_api*,sco_plugi
     // The session ends: the history goes with it.
     networkActive=false;state=SC_PRIVATE_SESSION_IDLE;StateEvent(false);Tick();
     CHECK(chatRows.empty() && chatDraft.empty());
+    CHECK(LogCount("zq")==0 && StatusText().find("zq")==std::string::npos);
+    unload();CHECK(messages.empty() && events.empty());
+    // ---- a listen host seen from a joiner: peer 1 is a player here, and what it says is read ----
+    Reset();modLog.clear();serverIsRelay=false;selfId=2;members={2,1,3};memberTotal=3;sentCount.clear();sentLast.clear();dropped=ignored=0;
+    CHECK(load(api,owner)==SCO_OK);
+    networkActive=true;state=SC_PRIVATE_SESSION_CONNECTED;StateEvent(true);PeerEvent(SCO_NET_PEER_JOINED,1);PeerEvent(SCO_NET_PEER_JOINED,3);
+    // Until the host has announced itself as a player, nothing is read from anyone and nothing is sent.
+    Deliver(mpprotocol::kChannel,3,player);said(3,"zq before the host announced");++ignored;said(1,"zq host before it announced");++ignored;
+    send("zq too early");CHECK(sent()==0 && notSent() && chatRows.empty());type("");
+    Deliver(mpprotocol::kChannel,1,player);
+    said(1,"zq from the listen host");said(3,"zq from the other joiner");Tick();
+    CHECK(chatRows==std::vector<std::string>({"Remote #1: zq from the listen host","Remote #3: zq from the other joiner"}) && counts());
+    send("zq joiner reply");
+    CHECK(sent()==1 && sentLast["multiplayer.chat"]==ChatBytes("zq joiner reply") && chatRows.size()==3 && chatRows[2]=="You: zq joiner reply");
     CHECK(LogCount("zq")==0 && StatusText().find("zq")==std::string::npos);
     unload();CHECK(messages.empty() && events.empty());
     members=savedMembers;memberTotal=savedTotal;selfId=savedSelf;serverIsRelay=savedRelay;failChatSend=false;peerNames.clear();
