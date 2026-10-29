@@ -58,6 +58,12 @@ constexpr uint8_t kChatVersion = 1;
 constexpr size_t  kChatHeader = 4;
 constexpr size_t  kMaxChatText = 160;                      // bytes of text in one line
 constexpr size_t  kMaxChat = kChatHeader + kMaxChatText;   // the whole message: the channel's max_len
+// Chat limits. A window is 5 seconds; a player sends at most kChatSendsPerWindow lines in one, and reads at most
+// kChatAcceptPerWindow from one sender (the rest are dropped and counted). The history shows the last kChatHistoryRows.
+constexpr uint64_t kChatWindowMs = 5000;
+constexpr unsigned kChatSendsPerWindow = 3;
+constexpr unsigned kChatAcceptPerWindow = 6;
+constexpr size_t   kChatHistoryRows = 32;
 static_assert(kMaxPose <= 1200, "a pose must fit one unreliable sco.net message");
 
 struct Level {
@@ -341,5 +347,42 @@ inline bool DecodeChat(const void* buf, size_t len, ChatLine& out) {
     if (!r.ok || !ChatTextOk(out.text, n)) { out = ChatLine{}; return false; }
     return true;
 }
+
+// ---- rates --------------------------------------------------------------------------------------
+
+// At most N events in any kChatWindowMs. The caller supplies the clock (milliseconds, never read here), so a test can
+// step time by hand. An event is forgotten once a whole window has passed since it.
+template <unsigned N>
+class RateWindow {
+    static_assert(N > 0, "a window holds at least one event");
+public:
+    // Is there room for one more event at nowMs?
+    bool Room(uint64_t nowMs) {
+        Expire(nowMs);
+        return count_ < N;
+    }
+    // Records an event at nowMs; nothing happens when the window is full.
+    void Add(uint64_t nowMs) {
+        Expire(nowMs);
+        if (count_ >= N) return;
+        stamp_[(first_ + count_) % N] = nowMs;
+        ++count_;
+    }
+    // Room, then Add: false (and nothing recorded) when the window is full.
+    bool Take(uint64_t nowMs) {
+        if (!Room(nowMs)) return false;
+        Add(nowMs);
+        return true;
+    }
+private:
+    void Expire(uint64_t nowMs) {
+        while (count_ && nowMs >= stamp_[first_] && nowMs - stamp_[first_] >= kChatWindowMs) {
+            first_ = (first_ + 1) % N;
+            --count_;
+        }
+    }
+    uint64_t stamp_[N] = {};
+    unsigned first_ = 0, count_ = 0;
+};
 
 }  // namespace mpwire
