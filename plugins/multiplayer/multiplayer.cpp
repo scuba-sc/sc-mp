@@ -273,6 +273,22 @@ uint8_t ProtocolRole(uint64_t id) {
     for(const auto& p:protocolPeers) if(p.id==id) return p.role;
     return 0;
 }
+const char* SessionMode(const sc_private_session_state_v1& state) {
+    if(!Active()) {
+        if(state.state==SC_PRIVATE_SESSION_IDLE) return "no private session";
+        if(state.state==SC_PRIVATE_SESSION_HOSTING) return "listen host starting";
+        if(state.state==SC_PRIVATE_SESSION_JOINING) return "join pending";
+        return "session inactive";
+    }
+    if(!METHOD(net,self_peer)) return "session role unavailable";
+    const uint64_t localPeer=net->self_peer();
+    if(!localPeer) return "session identity pending";
+    if(localPeer==kHostPeer) return "listen host (co-presence only; game state remains local)";
+    const uint8_t hostRole=ProtocolRole(kHostPeer);
+    if(hostRole==mpprotocol::kRelay) return "relay-announced host (message forwarding only)";
+    if(hostRole==mpprotocol::kPlayer) return "player-hosted co-presence (game state remains local)";
+    return "host role unverified";
+}
 bool HostCompatible() {
     return METHOD(net,self_peer) && (net->self_peer()==kHostPeer || ProtocolRole(kHostPeer)!=0);
 }
@@ -573,7 +589,7 @@ sco_result Status(const sco_arg*,uint32_t nargs,void*,char* out,uint32_t cap) {
     const auto state=State();
     const bool consistent=MembershipConsistent();char note[128]="";if(consistent) RelayNote(note,sizeof(note));
     const size_t unverified=UnverifiedCount();
-    std::snprintf(out,cap,"Multiplayer: G13 %s; protocol %s; transport state %u; %zu other players%s; %zu unverified or incompatible peers%s; %zu cleanup pending; Host/Join UI %s; G2 goto unavailable%s%s",METHOD(broker,request_host)?"available":"unavailable (admission/provider)",ProtocolAvailable()?"available":"unavailable (network service)",state.state,consistent?peers.size():0,note,unverified,ProtocolWait(),cleanup.size(),panelLive?"available":"unavailable",reason[0]?"; ":"",reason);return SCO_OK;
+    std::snprintf(out,cap,"Multiplayer: G13 %s; protocol %s; transport state %u; mode: %s; %zu other players%s; %zu unverified or incompatible peers%s; %zu cleanup pending; Host/Join UI %s; G2 goto unavailable%s%s",METHOD(broker,request_host)?"available":"unavailable (admission/provider)",ProtocolAvailable()?"available":"unavailable (network service)",state.state,SessionMode(state),consistent?peers.size():0,note,unverified,ProtocolWait(),cleanup.size(),panelLive?"available":"unavailable",reason[0]?"; ":"",reason);return SCO_OK;
 }
 sco_result Leave(const sco_arg*,uint32_t nargs,void*,char* out,uint32_t cap) {
     if(nargs) return SCO_BAD_ARG;
@@ -640,7 +656,7 @@ void PanelEvent(const char* id,const sco_widget_event* e,void*) {
 void UpdatePanel() {
     if(!METHOD(widgets,set_panel) || !METHOD(widgets,remove_panel)) { panelLive=false;return; }
     const auto state=State();const bool consistent=MembershipConsistent();char note[128]="";if(consistent) RelayNote(note,sizeof(note));
-    char status[256];std::snprintf(status,sizeof(status),"G13 %s; protocol %s; transport state %u; %zu peers%s, %zu unverified or incompatible%s, %zu cleanup pending",METHOD(broker,request_host)?"available":"unavailable",ProtocolAvailable()?"available":"unavailable (network service)",state.state,consistent?peers.size():0,note,UnverifiedCount(),ProtocolWait(),cleanup.size());
+    char status[256];std::snprintf(status,sizeof(status),"G13 %s; protocol %s; transport state %u; mode: %s; %zu peers%s, %zu unverified or incompatible%s, %zu cleanup pending",METHOD(broker,request_host)?"available":"unavailable",ProtocolAvailable()?"available":"unavailable (network service)",state.state,SessionMode(state),consistent?peers.size():0,note,UnverifiedCount(),ProtocolWait(),cleanup.size());
     std::vector<std::string> peerText;std::vector<const char*> rows;
     for(const auto& p:peers) { if(!consistent) break;char s[200];std::snprintf(s,sizeof(s),"%s: %s; avatar %s, ship %s",p.name,p.track.Valid()?"pose observed (v2 motion)":"waiting for pose",p.avatar.id?"owned ghost":"not shown",p.ship.id?"owned ghost":"not shown");peerText.emplace_back(s); }
     for(const auto& s:peerText) rows.push_back(s.c_str());

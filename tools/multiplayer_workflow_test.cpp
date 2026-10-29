@@ -227,12 +227,16 @@ int main(int argc,char** argv) {
     CHECK(load(&api,owner)==SCO_OK);CHECK(commands.size()==3 && messages.size()==6 && events.size()==3);
     CHECK(widgetVersion==SCO_WIDGETS_VERSION_1_2 && storageVersion==SCO_STORAGE_VERSION_1_1);
     CHECK(hostSeen && joinSeen && maskSeen && !rememberSeen && passInPanel.empty());
+    CHECK(StatusText().find("mode: no private session")!=std::string::npos);
+    CHECK(panelStatus.find("mode: no private session")!=std::string::npos);
     CHECK(hostCalls==0 && joinCalls==0 && sendCalls==0);Tick();CHECK(hostCalls==0 && joinCalls==0);
     char output[512];sco_arg who{};who.type=SCO_ARG_STRING;who.v.s="Remote";
     CHECK(commands.at("multiplayer.goto").fn(&who,1,nullptr,output,sizeof(output))==SCO_UNAVAILABLE);CHECK(std::strstr(output,"G2"));
     UI(1,SCO_WIDGET_BUTTON);CHECK(hostCalls==0); // empty/short passphrase refused locally
     UI(6,SCO_WIDGET_TEXT_INPUT,"synthetic passphrase");CHECK(hostCalls==0);
     UI(1,SCO_WIDGET_BUTTON);CHECK(hostCalls==1 && passInPanel.empty());CHECK(!db.count("passphrase"));
+    CHECK(StatusText().find("mode: listen host (co-presence only; game state remains local)")!=std::string::npos);
+    CHECK(panelStatus.find("mode: listen host (co-presence only; game state remains local)")!=std::string::npos);
     const char* keys[]={"name","join_address","avatar_class","host_port","join_port","show_ships","remember_passphrase"};
     for(const auto* key:keys) CHECK(db.count(key));
     mpwire::Spawn spawn{};spawn.kind=mpwire::kAvatar;spawn.sessionId=mpwire::SessionId(2,mpwire::kAvatar);std::snprintf(spawn.cls,sizeof(spawn.cls),"Synthetic_Human");
@@ -342,12 +346,15 @@ int main(int argc,char** argv) {
     Deliver("multiplayer.relay",1,RelayBytes(true,15,{{2,0,1},{3,1,1}}));
     Deliver("multiplayer.spawn",2,SpawnBytes(2));Deliver("multiplayer.pose",2,PoseBytes(1,7));Tick();
     CHECK(panelRows.empty() && StatusText().find("unverified or incompatible")!=std::string::npos && StatusText().find("via relay")==std::string::npos);
+    CHECK(StatusText().find("mode: host role unverified")!=std::string::npos);
     Deliver(mpprotocol::kChannel,1,Bytes({1,mpprotocol::kRelay}));
     Deliver(mpprotocol::kChannel,1,Bytes({mpprotocol::kGeneration}));
     Deliver("multiplayer.relay",1,RelayBytes(true,15,{{2,0,1},{3,1,1}}));Tick();CHECK(panelRows.empty() && messages.count("multiplayer.near.1")==0);
     Deliver(mpprotocol::kChannel,1,Bytes({mpprotocol::kGeneration,mpprotocol::kRelay}));
     Deliver("multiplayer.relay",1,RelayBytes(true,15,{{2,0,1},{3,1,1}}));Tick();
     CHECK(messages.count("multiplayer.near.1")==1 && StatusText().find("via relay")!=std::string::npos);
+    CHECK(StatusText().find("mode: relay-announced host (message forwarding only)")!=std::string::npos);
+    CHECK(panelStatus.find("mode: relay-announced host (message forwarding only)")!=std::string::npos);
     Deliver(mpprotocol::kChannel,1,Bytes({99,mpprotocol::kRelay}));Tick();
     CHECK(messages.count("multiplayer.near.1")==0 && panelRows.empty() && StatusText().find("via relay")==std::string::npos);
     unload();
@@ -385,6 +392,7 @@ int main(int argc,char** argv) {
     Deliver(mpprotocol::kChannel,2,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));Tick();
     // Before the server says what it is, the join event of peer 1 makes no record: only peer 2 is counted.
     CHECK(StatusText().find("1 other players")!=std::string::npos && StatusText().find("via relay")==std::string::npos);
+    CHECK(StatusText().find("mode: relay-announced host (message forwarding only)")!=std::string::npos);
     Deliver("multiplayer.spawn",2,SpawnBytes(2));Deliver("multiplayer.pose",2,PoseBytes(1,3));
     const unsigned spawnsBefore=spawnCalls;Tick();CHECK(spawnCalls==spawnsBefore+1);
     // The roster, from the server, lists peers 2 and 3 (this player) and not the server.
@@ -419,6 +427,7 @@ int main(int argc,char** argv) {
     StateEvent(true);PeerEvent(SCO_NET_PEER_JOINED,1);Tick();
     CHECK(StatusText().find("0 other players")!=std::string::npos);
     Deliver(mpprotocol::kChannel,1,Bytes({mpprotocol::kGeneration,mpprotocol::kPlayer}));
+    CHECK(StatusText().find("mode: player-hosted co-presence (game state remains local)")!=std::string::npos);
     Deliver("multiplayer.spawn",1,SpawnBytes(1));CHECK(StatusText().find("1 other players")!=std::string::npos && LogCount("relay")==0);
     unload();
     // ---- nearby-only: poses go to the relay server on multiplayer.near_up and come back on multiplayer.near.<slot> ----
