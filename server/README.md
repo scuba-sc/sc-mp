@@ -15,14 +15,15 @@ own; an old version is never reinterpreted.
 ## Synchronized upgrades
 
 Upgrade the relay and all players together to builds implementing the same multiplayer protocol
-generation (currently 2). The generation is an application compatibility contract, not a binary
+generation (which one it is, and what it covers, is in the plugin's
+[protocol instructions](../plugins/multiplayer/README.md#co-presence-not-shared-simulation)). The generation is an application compatibility contract, not a binary
 version; different builds implementing the same contract are compatible. The relay announces its
 generation and role on `multiplayer.protocol` alongside its roster and forwards player announcements
 on that reliable channel, including in nearby-only mode. A current plugin excludes peers without
 matching evidence and shows their pending or incompatible status. The existing sco.net handshake
 cannot refuse a peer based on this application generation or remove an individual peer; an older
-client can still establish a transport session and report it connected. See the plugin's
-[protocol instructions](../plugins/multiplayer/README.md) for the local gate and its limits.
+client can still establish a transport session and report it connected. The protocol instructions
+describe the local gate and its limits.
 
 ## Guardrails, and where the server meets them
 
