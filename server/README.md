@@ -123,14 +123,19 @@ keep stable. So the server touches the library in one place only.
 - `server/tools/check-no-game-code.sh` (the test `relay_no_game_code`) reads the production set only,
   `server/*.cpp`, `server/*.h` and `cmake/ScoCoreSource.cmake`. It fails when any file but the boundary file
   includes one of the library's headers (the `sco/net/` ones or `sc_net.h`) or writes `sco::net::`, even in a
-  comment; when an `#include` is not one of our own headers, `plugins/multiplayer/relay_wire.h` (the only file
-  outside `server/` that is allowed), or a standard or POSIX header (plus `windows.h` in `main.cpp` under `_WIN32` and
-  `sal.h` in `log.h` under `_MSC_VER`; other Windows headers and uses outside those files need explicit allowances; a
-  name with `..` in it is never allowed, even `server/../...`); when the kit was not configured with `SCO_GAME_SC=OFF`; and when the program links anything
-  but the server library, the kit's network library and the two socket files, or those libraries hold other objects.
+  comment; when an `#include` is not one of our own `server/<name>` headers (a header in a subfolder such as
+  `server/tests/` is not one), `plugins/multiplayer/relay_wire.h` (the only file outside `server/` that is allowed), or a
+  standard or POSIX header (plus `windows.h` in `main.cpp` under `_WIN32` and `sal.h` in `log.h` under `_MSC_VER`;
+  other Windows headers and uses outside those files need explicit allowances; a name with `..` in it is never
+  allowed, even `server/../...`); when the kit was not configured with `SCO_GAME_SC=OFF`; and when the program links
+  anything but the server library, the kit's network library and the two socket files, or those libraries hold other
+  objects. It finds an `#include` wherever it hides: behind a comment between the `#` and `include`, after a
+  backslash-newline splice, or spelt with the `%:` digraph.
   The link is read twice: from what CMake declares for each target, including the libraries a target passes on to
-  whatever links it (`INTERFACE_LINK_LIBRARIES`), and from the program's real link line where the generator writes
-  one (`link.txt` with Makefiles).
+  whatever links it (`INTERFACE_LINK_LIBRARIES`), and from the program's real link line, the `link.txt` that Makefile
+  generators write. The check fails when that file is missing: Ninja writes none, so the relay is checked with a
+  Makefile generator (the default on Linux). It splits the words of the link line on commas, so a library inside a
+  `-Wl,...` list counts like any other, and it fails on an `@response` file, which would hide the words from it.
 - `server/tools/check-net-boundary.sh <extracted kit>` needs no compiler. It checks the declarations the boundary
   uses, the constants, the lines of behaviour no compiler can see (what `Core` relays and to whom, who checks the seat
   limit, the private ranges, which interface a socket binds), and the blob id of each kit file the server compiles
