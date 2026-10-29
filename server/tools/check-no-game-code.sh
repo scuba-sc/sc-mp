@@ -5,17 +5,21 @@
 # socket files (as CMake declares it, with the libraries each target passes on, and as the program's real link line
 # says), and those libraries hold only the objects they should. The real link line is required, not optional: it is
 # read from the program's link.txt, which only the Makefile generators write, so a build without that file (Ninja, for
-# one) fails this check instead of skipping the part it cannot see. The line is split into words at blanks and at
-# commas, so a library inside -Wl,... counts as a library, and an @response file is refused because the words in it
-# are not on the line. From the sources: only server/net_boundary.cpp names the kit's network library (includes a
-# sco/net header or sc_net.h, or writes sco::net::, even in a comment), and every #include in server/ is one of our
-# own headers (server/<name>.h, never a file from a folder below server/, such as server/tests), the shared relay wire
-# header, or an approved standard, POSIX or platform header (net_boundary.cpp also the library's). The includes are
-# read the way the compiler reads them: a backslash at a line end joins the next line, comments are removed, "%:" is
-# "#". So "#/**/include", a directive split over two lines and "%:include" are found, while an include inside a
-# comment is not an include. An include that climbs out of its folder with ".." is never admitted, whatever it points
-# at. Text the include reader cannot read (a raw string literal, a backslash followed by blanks at a line end, a
-# comment that never ends) is refused too. Exit 0 means every check passed.
+# one) fails this check instead of skipping the part it cannot see. The shell that runs link.txt drops quotes and
+# backslash escapes, so they are dropped here first; then the line is split into words at blanks and at commas, so a
+# library inside -Wl,... counts as a library, and an @response file is refused because the words in it are not on the
+# line. From the sources: only server/net_boundary.cpp names the kit's network library (includes a sco/net header or
+# sc_net.h, or writes sco::net::, even in a comment), and every #include in server/ is one of our own headers
+# (server/<name>.h, never a file from a folder below server/, such as server/tests), the shared relay wire header, or
+# an approved standard, POSIX or platform header (net_boundary.cpp also the library's). The includes are read twice and
+# either reading may refuse. The plain reading takes any line, or line joined across backslash-newlines, that starts
+# with # (or the digraph %:) and the word include (or import), with any blanks between, form feed and vertical tab
+# too. The C++ reading adds what the plain one cannot see: it removes comments, so "#/**/include" and "/* x */
+# #include" are found, and it skips string and character literals. So an include inside a one-line comment or a
+# string is not an include, while one on a line of its own inside a multi-line comment is still refused. An include
+# that climbs out of its folder with ".." is never admitted, whatever it points at. Text the C++ reading cannot read
+# (a raw string literal, a backslash followed by blanks at a line end, a comment that never ends) is refused too.
+# Exit 0 means every check passed.
 #
 # Only the production set is read: server/*.cpp, server/*.h and cmake/ScoCoreSource.cmake. Not server/tests,
 # server/tools or any document.
@@ -73,12 +77,14 @@ fi
 
 # The program's real link line, which the generator must write (Makefile generators: link.txt; Ninja and the Visual
 # Studio generators write none, so the check fails there instead of skipping what it cannot see). CMake's own words
-# for a library end in .a or .so, or start with -l; the objects end in .o. CMake quotes some words of the line. The
-# words are split at any blank and at commas, so -Wl,--whole-archive,/opt/game.a,--no-whole-archive gives the word
-# /opt/game.a. A word that starts with @ names a response file, whose words are not on this line: refused.
+# for a library end in .a or .so, or start with -l; the objects end in .o. CMake quotes some words of the line, and
+# the shell drops double and single quotes and backslashes (octal 042, 047 and 134) before the linker sees a word, so
+# they are dropped first: '/opt/game.a' is the word /opt/game.a. The words are split at any blank and at commas, so
+# -Wl,--whole-archive,/opt/game.a,--no-whole-archive gives the word /opt/game.a. A word that starts with @ names a
+# response file, whose words are not on this line: refused.
 link_file=$(fact link_file)
 if [ -n "$link_file" ] && [ -f "$link_file" ]; then
-    words=$(tr -d '"' < "$link_file" | awk '{ n = split($0, w, /[[:space:],]+/); for (i = 1; i <= n; i++) if (w[i] != "") print w[i] }')
+    words=$(tr -d '\042\047\134' < "$link_file" | awk '{ n = split($0, w, /[[:space:],]+/); for (i = 1; i <= n; i++) if (w[i] != "") print w[i] }')
     if printf '%s\n' "$words" | grep -q '^@'; then
         fail "the program's link line names an @response file, whose words this check cannot read. The whole link line is: $(cat "$link_file")"
     fi
@@ -164,34 +170,58 @@ fi
 
 # The include reader: lists the include directives of one C++ source file (on standard input), one per line, as the
 # header name, or as the whole directive when it cannot be read as a name (which no allowlist admits). It reads the
-# file in the compiler's order. A backslash at a line end joins the next line. Each comment becomes one blank (a
-# block comment may span lines and then joins them), the digraph %: is a #, and a line whose first word is
-# # include (or # import, which GCC also accepts) is a directive. String and character literals are skipped, so a
-# /* inside one starts no comment; a quote that follows a number is a digit separator (1_000), not a literal.
-# Three things it cannot read are listed as lines of their own, and so refused: a raw string literal (its text is
-# not subject to the rules above), a backslash followed by blanks at a line end (compilers differ on whether it
-# joins the lines), and a comment that never ends. Plain awk: no extension of any one implementation.
+# file twice and lists what either reading finds, so the second reading can only add refusals to the first.
+#   The plain reading knows nothing about C++, so no comment and no literal can fool it. It takes every physical line
+#   as written, and every line joined across backslash-newlines, whose first word is # (or the digraph %:) and then
+#   include (or import, which GCC also accepts), with any blanks in between: space, tab, form feed, vertical tab. A
+#   lone carriage return ends a line, as it does for GCC and Clang.
+#   The C++ reading finds what the plain one cannot. It removes comments (each becomes one blank; a block comment
+#   may span lines and then joins them), so #/**/include and "/* note */ #include" are directives. It skips string
+#   and character literals, so a /* inside one starts no comment. A quote that follows a number and comes before a
+#   letter or digit is a digit separator (1'000), not a literal, as in the C++14 grammar.
+# So an include inside a one-line comment or a string is not an include, but one on a line of its own inside a
+# multi-line comment is refused (the plain reading sees it): the gate fails closed. Three things the C++ reading
+# cannot read are listed as lines of their own, and so refused: a raw string literal, a backslash followed by blanks
+# at a line end (compilers differ on whether it joins the lines), and a comment that never ends. Plain awk: no
+# extension of any one implementation.
 include_scanner='
 function emit(t,    rest, name) {
-    if (t !~ /^[ \t]*#[ \t]*(include|import)/) return
+    if (t !~ /^[[:space:]]*(#|%:)[[:space:]]*(include|import)/) return
     rest = t
-    sub(/^[ \t]*#[ \t]*(include|import)/, "", rest)
-    if (match(rest, /^[ \t]*[<"][^>"]*[>"]/)) {
+    sub(/^[[:space:]]*(#|%:)[[:space:]]*(include|import)/, "", rest)
+    if (match(rest, /^[[:space:]]*[<"][^>"]*[>"]/)) {
         name = substr(rest, RSTART, RLENGTH)
-        sub(/^[ \t]*[<"]/, "", name)
+        sub(/^[[:space:]]*[<"]/, "", name)
         sub(/[>"]$/, "", name)
         print name
     } else {
-        sub(/^[ \t]+/, "", t)
-        sub(/[ \t]+$/, "", t)
+        sub(/^[[:space:]]+/, "", t)
+        sub(/[[:space:]]+$/, "", t)
         print t
     }
 }
 
-function ends_in_number(t,    k) {
+function ends_in_number(t,    k, c, r, i, n) {
     k = length(t)
-    while (k > 0 && substr(t, k, 1) ~ /[A-Za-z0-9_.]/) k--
-    return substr(t, k + 1) ~ /^[.]?[0-9]/
+    while (k > 0) {
+        c = substr(t, k, 1)
+        if (c ~ /[A-Za-z0-9_.]/ || c == q) { k--; continue }
+        if ((c == "+" || c == "-") && substr(t, k - 1, 1) ~ /[eEpP]/) { k--; continue }
+        break
+    }
+    r = substr(t, k + 1)
+    n = length(r)
+    i = 1
+    while (i <= n) {
+        c = substr(r, i, 1)
+        if (c ~ /[0-9]/ || (c == "." && substr(r, i + 1, 1) ~ /[0-9]/)) return 1
+        if (c ~ /[A-Za-z_]/) {
+            while (i <= n && substr(r, i, 1) ~ /[A-Za-z0-9_]/) i++
+        } else {
+            i++
+        }
+    }
+    return 0
 }
 
 function literal_end(s, i,    n, j, e) {
@@ -236,7 +266,7 @@ function scan(s,    i, n, c, d, rest, p, j) {
             cur = cur "#"
             i += 2
         } else if (c == "\"" || c == q) {
-            if (c == q && ends_in_number(cur)) {
+            if (c == q && substr(s, i + 1, 1) ~ /[A-Za-z0-9_]/ && ends_in_number(cur)) {
                 cur = cur c
                 i++
             } else {
@@ -256,6 +286,19 @@ function scan(s,    i, n, c, d, rest, p, j) {
     }
 }
 
+function feed(line,    logical) {
+    if (line ~ /\\[[:space:]]+$/) print "backslash followed by blanks at a line end"
+    emit(line)
+    if (line ~ /\\$/) {
+        pend = pend substr(line, 1, length(line) - 1)
+        return
+    }
+    logical = pend line
+    if (pend != "") emit(logical)
+    pend = ""
+    scan(logical)
+}
+
 BEGIN {
     q = sprintf("%c", 39)
     special = "[/\"%" q "]"
@@ -265,17 +308,19 @@ BEGIN {
     line = $0
     if (NR == 1 && substr(line, 1, 3) == sprintf("%c%c%c", 239, 187, 191)) line = substr(line, 4)
     sub(/\r$/, "", line)
-    if (line ~ /\\[ \t]+$/) print "backslash followed by blanks at a line end"
-    if (line ~ /\\$/) {
-        pend = pend substr(line, 1, length(line) - 1)
+    cn = split(line, parts, "\r")
+    if (cn == 0) {
+        feed("")
         next
     }
-    scan(pend line)
-    pend = ""
+    for (ck = 1; ck <= cn; ck++) feed(parts[ck])
 }
 
 END {
-    if (pend != "") scan(pend)
+    if (pend != "") {
+        emit(pend)
+        scan(pend)
+    }
     if (in_block) {
         emit(cur)
         print "comment that never ends"
@@ -289,7 +334,7 @@ list_includes() {   # the include directives of the source file on standard inpu
 
 # The reader must work with this machine's awk: a canary with a comment, a digraph and a split directive. An awk that
 # fails to run the program would list nothing, and "nothing" must never read as "no foreign include".
-canary=$(printf '%s\n' '/* #include <hidden.h> */' '%:/**/include <canary.h>' '#inc\' 'lude <spliced.h>' | list_includes | tr '\n' ' ')
+canary=$(printf '%s\n' '/* #include <hidden.h> */' '%:/**/include <canary.h>' '#inc\' 'lude <spliced.h>' | list_includes | sort -u | tr '\n' ' ')
 if [ "$canary" != "canary.h spliced.h " ]; then
     fail "the include reader does not work with this awk (it listed: '$canary')"
 fi
