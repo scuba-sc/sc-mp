@@ -94,8 +94,40 @@ counts the server). It stops on SIGTERM or Ctrl+C: it tells the players, logs a 
 status 1 means it could not start (the message says why), 2 means it was started the wrong way.
 
 If your players join through a VPN, add its range to `allowed_addresses`. If the machine has a firewall, allow the
-UDP port for your LAN or VPN network only. How the plugin joins and what it shows: the "Joining a relay server"
-section of [plugins/multiplayer/README.md](../plugins/multiplayer/README.md).
+UDP port for your LAN or VPN network only. What players' sc-offline accepts is said under
+[Install on a Linux server](#install-on-a-linux-server). How the plugin joins and what it shows: the "Joining a relay
+server" section of [plugins/multiplayer/README.md](../plugins/multiplayer/README.md).
+
+## Install on a Linux server
+
+```
+sudo sh server/deploy/install.sh
+```
+
+Run from your own copy of this repository on a plain Linux machine, it copies the tree into a new root-owned folder and
+checks the copy as a safeguard against common mistakes (it refuses symbolic links, files owned by anyone but root and the
+user who ran `sudo`, and files writable by everyone or by a group that is not root's or the owner's private group; it
+does not defend against someone who already controls your copy, so run it only from a copy you trust). Then it installs the
+missing build tools (on Debian and Ubuntu; elsewhere it names them), builds only the copy's relay with the default Unix
+Makefiles generator from the pinned SDK download (it makes no other network call), and installs it as
+`/usr/local/bin/sco-relay` with an account of its own. It makes `/etc/sco-relay/sco-relay.conf` (mode 0640, owner root,
+group `sco-relay`) with a fresh random passphrase that it never prints and keeps when you run it again. With systemd it
+starts the relay as a service that comes back after a reboot and returns. Without systemd the same command stays in the
+foreground as the relay (Ctrl+C or SIGTERM stops it, exit 0), after printing the command for starting it again later.
+[deploy/README.md](deploy/README.md) lists exactly what is checked, every step, every file it changes, and how to remove it.
+
+- **Passphrase.** The `passphrase =` line of `/etc/sco-relay/sco-relay.conf`. Give it to your players.
+- **Port.** UDP 64091 (the `port` setting). Open it in your firewall for your LAN or VPN network only; the installer
+  changes no firewall.
+- **Who can join.** The LAN rule (guardrail 2) applies: the relay drops every address except loopback and the private
+  ranges. A rented server reached over public addresses therefore needs a VPN whose addresses are private, or
+  `allowed_addresses` naming the ranges the players come from. Players' sc-offline currently blocks CGNAT ranges such as
+  `100.64.0.0/10` (found by reading its source, not run in game), so a VPN in that range may not work for them yet.
+
+No container image is shipped. **Not run on a real VM. Not run in game.** The kit was run from a committed copy in fresh
+`ubuntu:24.04` and `debian:12` containers and in an `ubuntu:24.04` container running systemd: install, start, a join with
+the generated passphrase, stop, start again, a second install that keeps the passphrase, and (with systemd) a restart of
+the container with the enabled service coming back.
 
 ## Tests
 
@@ -181,4 +213,5 @@ supported.
 - `run_loop.h`, `run_loop.cpp`: one pass of the loop and the stats line.
 - `log.h`, `log.cpp`: the operator log.
 - `sco-relay.example.conf`: every setting, one comment line each.
+- `deploy/`: the install kit for Linux: `install.sh`, the systemd unit `sco-relay.service`, and its README.
 - `tests/`, `tools/`: the tests and the two checks above.
