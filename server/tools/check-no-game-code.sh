@@ -178,7 +178,9 @@ fi
 #   The C++ reading finds what the plain one cannot. It removes comments (each becomes one blank; a block comment
 #   may span lines and then joins them), so #/**/include and "/* note */ #include" are directives. It skips string
 #   and character literals, so a /* inside one starts no comment. A quote that follows a number and comes before a
-#   letter or digit is a digit separator (1'000), not a literal, as in the C++14 grammar.
+#   letter or digit is a digit separator (1'000), not a literal, as in the C++14 grammar. A number never contains a
+#   literal, so the look back at the number stops at the end of the last literal ('1''a/*' is two literals).
+#   NUL bytes are dropped before either reading, because GCC ignores them.
 # So an include inside a one-line comment or a string is not an include, but one on a line of its own inside a
 # multi-line comment is refused (the plain reading sees it): the gate fails closed. Three things the C++ reading
 # cannot read are listed as lines of their own, and so refused: a raw string literal, a backslash followed by blanks
@@ -203,7 +205,7 @@ function emit(t,    rest, name) {
 
 function ends_in_number(t,    k, c, r, i, n) {
     k = length(t)
-    while (k > 0) {
+    while (k > lit_end) {
         c = substr(t, k, 1)
         if (c ~ /[A-Za-z0-9_.]/ || c == q) { k--; continue }
         if ((c == "+" || c == "-") && substr(t, k - 1, 1) ~ /[eEpP]/) { k--; continue }
@@ -273,6 +275,7 @@ function scan(s,    i, n, c, d, rest, p, j) {
                 if (c == "\"" && substr(cur, length(cur), 1) == "R") print "raw string literal"
                 j = literal_end(s, i)
                 cur = cur substr(s, i, j - i + 1)
+                lit_end = length(cur)
                 i = j + 1
             }
         } else {
@@ -283,6 +286,7 @@ function scan(s,    i, n, c, d, rest, p, j) {
     if (!in_block) {
         emit(cur)
         cur = ""
+        lit_end = 0
     }
 }
 
@@ -302,6 +306,7 @@ function feed(line,    logical) {
 BEGIN {
     q = sprintf("%c", 39)
     special = "[/\"%" q "]"
+    lit_end = 0
 }
 
 {
@@ -329,7 +334,7 @@ END {
 '
 
 list_includes() {   # the include directives of the source file on standard input, one per line
-    LC_ALL=C awk "$include_scanner"
+    tr -d '\000' | LC_ALL=C awk "$include_scanner"
 }
 
 # The reader must work with this machine's awk: a canary with a comment, a digraph and a split directive. An awk that

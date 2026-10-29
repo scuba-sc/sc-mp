@@ -4,14 +4,14 @@
 # headers used by the relay. Run the real checker on temporary source copies so the checkout is never modified.
 #
 # The first cases (the Windows headers, a path that climbs out of server/) stop at the first failure. Then come the
-# five holes that run 4 found in the gate, one case each. A hole case tries several ways through the hole and prints
+# five holes listed in sc-mp pull request #6, one case each. A hole case tries several ways through the hole and prints
 # "ok: H<n> ..." when the checker refuses all of them for the right reason, or "FAIL: H<n> ..." naming the ways it let
 # through. No case stops the script: every one runs before it exits, so a gate with several holes shows them all.
 #   H1  a missing link line file (Ninja writes none) was skipped, not refused
 #   H2  a library inside -Wl,...,/opt/game.a,... (or behind a tab, in quotes, or in an @response file) was not seen on
 #       the link line
 #   H3  an include the line scanner could not see: a comment inside the directive (#/**/include), a split directive,
-#       a lone carriage return that ends a line
+#       a lone carriage return that ends a line, a NUL byte, a quote the reader takes for a digit separator
 #   H4  another spelling of the directive: the %:include digraph, #import
 #   H5  an include of server/tests/*.h (any folder below server/) was admitted into the production sources
 # Two more cases guard the rewritten include reader against regressions the review of the first rewrite found. They
@@ -113,7 +113,7 @@ if ! grep -Fq 'main.cpp: server/../plugins/multiplayer/relay_wire.h' "$work/trav
 fi
 echo "ok: rejected an include that climbs out of server/"
 
-# ---- the five holes of run 4 ------------------------------------------------------------------------------
+# ---- the five holes listed in sc-mp pull request #6 -------------------------------------------------------
 
 holes=0
 hole_bad=""
@@ -163,6 +163,12 @@ accept_source() {   # <what> <text>: <text> added to server/main.cpp must be acc
     copy_sources
     printf '\n%s\n' "$2" >> "$copy_root/server/main.cpp"
     variant_accepted "$1" "$facts"
+}
+
+refuse_printf() {   # <what> <words the output must hold> <printf format>: the bytes it prints, added to main.cpp, must be refused
+    copy_sources
+    printf "$3" >> "$copy_root/server/main.cpp"
+    variant_refused "$1" "$2" "$facts"
 }
 
 # H1: the program's link line file is required. A generator that writes none (Ninja) leaves nothing to read, and a
@@ -225,6 +231,19 @@ refuse_source "a raw string literal, which the reader cannot read through" "main
     "const char* s = R\"(x\"/*)\";${nl}#include <game_pack.h>${nl}const char* t = \"*/\";"
 refuse_source "a lone carriage return, which ends a line for GCC and Clang" "main.cpp: game_pack.h" \
     "int x = 0;${cr}#include <game_pack.h>"
+# A number never contains a literal: the second quote of '1''a/*' starts a character literal, not a digit separator, so
+# no comment opens and a directive that only the C++ reading can find stays visible.
+refuse_source "'1''a/*' inside #if 0, then #/**/include" "main.cpp: game_pack.h" \
+    "#if 0${nl}'1''a/*'${nl}#endif${nl}#/**/include <game_pack.h>${nl}#if 0${nl}*/${nl}#endif"
+refuse_source "'1''a/*' inside #if 0, then a directive split by a comment" "main.cpp: game_pack.h" \
+    "#if 0${nl}'1''a/*'${nl}#endif${nl}#/*${nl}*/include <game_pack.h>${nl}#if 0${nl}*/${nl}#endif"
+refuse_source "'0''x/*' in a define, then %:/**/include" "main.cpp: game_pack.h" \
+    "#define U '0''x/*'${nl}%:/**/include <game_pack.h>${nl}#define V */"
+refuse_source "u8'1''a/*' then #/**/include" "main.cpp: game_pack.h" \
+    "int u = u8'1''a/*';${nl}#/**/include <game_pack.h>${nl}#define W */"
+# GCC ignores NUL bytes, so they must not hide a directive.
+refuse_printf "a NUL byte before the hash" "main.cpp: game_pack.h" '\n\000#include <game_pack.h>\n'
+refuse_printf "a NUL byte after the hash" "main.cpp: game_pack.h" '\n#\000include <game_pack.h>\n'
 hole_done H3 "an include behind a comment, a line splice or a literal is found; text that cannot be read is refused"
 
 # H4: the other spellings of the directive.
