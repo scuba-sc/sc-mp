@@ -66,6 +66,9 @@ before starting a session. The generation is separate from binary and SDK versio
 [protocol instructions](plugins/multiplayer/README.md). What a relay must meet: [CONTRIBUTING.md](CONTRIBUTING.md).
 Background: [docs/relay-roadmap.md](docs/relay-roadmap.md). Not run in game.
 
+Current single-player, listen-host, relay-only, and future authoritative-server boundaries are
+summarized in [docs/session-modes.md](docs/session-modes.md).
+
 ## Licence
 
 GPL-3.0-only ([LICENSE](LICENSE)). Where it came from: [PROVENANCE.md](PROVENANCE.md). How to contribute, and
