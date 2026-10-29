@@ -198,6 +198,86 @@ Bytes RelayBytes(bool nearby,uint16_t maxPlayers,std::initializer_list<rw::Relay
     rw::RelayRoster roster;roster.nearbyOnly=nearby;roster.maxPlayers=maxPlayers;roster.players.assign(players.begin(),players.end());return rw::EncodeRelay(roster);
 }
 void Reset() { commands.clear();events.clear();messages.clear();panelRemoved=false;networkActive=false;state=0; }
+// ---- multiplayer.chat: the layout in multiplayer_wire.h. No module, no clock, no session. ----------------------
+// A chat message as a sender writes it: version 1, a zero byte, the length in two little-endian bytes, then the text.
+Bytes ChatBytes(const std::string& text) {
+    uint8_t data[mpwire::kMaxChat];const size_t n=mpwire::EncodeChat(text.data(),text.size(),data,sizeof(data));
+    return Bytes(data,data+n);
+}
+// The same laid out by hand, so a test can break one field at a time.
+Bytes ChatRaw(uint8_t version,uint8_t reserved,uint16_t length,const Bytes& text) {
+    Bytes out({version,reserved,static_cast<uint8_t>(length&0xFF),static_cast<uint8_t>(length>>8)});
+    out.insert(out.end(),text.begin(),text.end());return out;
+}
+bool ChatReads(const Bytes& message,std::string* text=nullptr) {
+    mpwire::ChatLine line{};
+    if(!mpwire::DecodeChat(message.data(),message.size(),line)) return false;
+    if(text) *text=std::string(line.text,line.length);
+    return true;
+}
+bool ChatTextPasses(const Bytes& text) { return mpwire::ChatTextOk(reinterpret_cast<const char*>(text.data()),text.size()); }
+void ChatLayoutChecks() {
+    CHECK(std::strcmp(mpwire::kChatChannel,"multiplayer.chat")==0);
+    CHECK(mpwire::kChatVersion==1 && mpwire::kChatHeader==4 && mpwire::kMaxChatText==160 && mpwire::kMaxChat==164);
+    // Golden bytes: "hi" is 01 00 02 00 68 69, and it reads back.
+    std::string text;
+    CHECK(ChatBytes("hi")==Bytes({0x01,0x00,0x02,0x00,0x68,0x69}));
+    CHECK(ChatReads(Bytes({0x01,0x00,0x02,0x00,0x68,0x69}),&text) && text=="hi");
+    // Length: 1 to 160 bytes of text, and exactly 4 + n bytes in all.
+    const Bytes full=ChatBytes(std::string(160,'a'));
+    CHECK(full.size()==164 && full[2]==0xA0 && full[3]==0x00 && ChatReads(full,&text) && text.size()==160);
+    CHECK(ChatBytes(std::string(161,'a')).empty() && ChatBytes("").empty());
+    CHECK(ChatReads(ChatRaw(1,0,1,Bytes({'a'})),&text) && text=="a");
+    CHECK(!ChatReads(ChatRaw(1,0,0,Bytes())));                                        // no text
+    CHECK(!ChatReads(ChatRaw(1,0,161,Bytes(161,uint8_t('a')))));                    // one byte too many
+    CHECK(!ChatReads(ChatRaw(1,0,0x0102,Bytes(258,uint8_t('a')))));                 // the high length byte counts
+    CHECK(!ChatReads(ChatRaw(1,0,2,Bytes({'h'}))));                                  // cut short
+    CHECK(!ChatReads(ChatRaw(1,0,2,Bytes({'h','i','!'}))));                          // a trailing byte
+    CHECK(!ChatReads(ChatRaw(1,0,3,Bytes({'h','i'}))) && !ChatReads(ChatRaw(1,0,1,Bytes({'h','i'}))));
+    CHECK(!ChatReads(Bytes(165,uint8_t(0))));                                          // longer than any message
+    CHECK(!ChatReads(Bytes()) && !ChatReads(Bytes({1,0,1})) && !ChatReads(Bytes({1,0,0,0})));
+    // Version 1 only, and the reserved byte is zero: anything else is another layout.
+    CHECK(ChatReads(ChatRaw(1,0,2,Bytes({'h','i'}))));
+    CHECK(!ChatReads(ChatRaw(0,0,2,Bytes({'h','i'}))) && !ChatReads(ChatRaw(2,0,2,Bytes({'h','i'}))) && !ChatReads(ChatRaw(255,0,2,Bytes({'h','i'}))));
+    CHECK(!ChatReads(ChatRaw(1,1,2,Bytes({'h','i'}))) && !ChatReads(ChatRaw(1,255,2,Bytes({'h','i'}))));
+    // A buffer too small for the message is refused, not cut.
+    uint8_t small[3];CHECK(mpwire::EncodeChat("hi",2,small,sizeof(small))==0 && mpwire::EncodeChat(nullptr,2,small,sizeof(small))==0);
+    // UTF-8 that is fine.
+    CHECK(ChatTextPasses(Bytes({'a',' ','b','~'})));
+    CHECK(ChatTextPasses(Bytes({0xC3,0xA9})));                  // e acute
+    CHECK(ChatTextPasses(Bytes({0xE2,0x82,0xAC})));             // euro sign
+    CHECK(ChatTextPasses(Bytes({0xF0,0x9F,0x98,0x80})));        // a four-byte character
+    CHECK(ChatTextPasses(Bytes({0xC2,0xA0})));                  // no-break space: the first character after C1
+    CHECK(ChatTextPasses(Bytes({0xED,0x9F,0xBF})));             // U+D7FF, just below the surrogates
+    CHECK(ChatTextPasses(Bytes({0xEE,0x80,0x80})));             // U+E000, just above them
+    CHECK(ChatTextPasses(Bytes({0xF4,0x8F,0xBF,0xBF})));        // U+10FFFF, the last character
+    CHECK(ChatTextPasses(Bytes({0xE2,0x80,0x8E})));             // a left-to-right mark is not an embedding, override or isolate
+    CHECK(ChatTextPasses(Bytes({0xE2,0x80,0xAF})) && ChatTextPasses(Bytes({0xE2,0x81,0xAA})));   // U+202F and U+206A, beside the refused ones
+    // Control characters: C0, DEL, C1.
+    for(unsigned c=0;c<0x20;++c) CHECK(!ChatTextPasses(Bytes({'a',static_cast<uint8_t>(c),'b'})));
+    CHECK(!ChatTextPasses(Bytes({0x7F})) && ChatTextPasses(Bytes({0x7E})));
+    CHECK(!ChatTextPasses(Bytes({0xC2,0x80})) && !ChatTextPasses(Bytes({0xC2,0x8D})) && !ChatTextPasses(Bytes({0xC2,0x9F})));
+    // Bidirectional embedding, override and isolate controls.
+    for(uint8_t last=0xAA;last<=0xAE;++last) CHECK(!ChatTextPasses(Bytes({'a',0xE2,0x80,last})));
+    for(uint8_t last=0xA6;last<=0xA9;++last) CHECK(!ChatTextPasses(Bytes({'a',0xE2,0x81,last})));
+    // UTF-8 that is not well formed: a stray continuation byte, overlong forms, surrogates, beyond U+10FFFF, bytes that
+    // never occur, a character cut off by the end, a lead byte not followed by continuation bytes.
+    for(const Bytes& bad:{Bytes({0x80}),Bytes({0xBF}),Bytes({0xC0,0x80}),Bytes({0xC0,0xAF}),Bytes({0xC1,0xBF}),Bytes({0xE0,0x80,0xAF}),
+                          Bytes({0xE0,0x9F,0xBF}),Bytes({0xF0,0x80,0x80,0x80}),Bytes({0xF0,0x8F,0xBF,0xBF}),Bytes({0xED,0xA0,0x80}),
+                          Bytes({0xED,0xBF,0xBF}),Bytes({0xF4,0x90,0x80,0x80}),Bytes({0xF5,0x80,0x80,0x80}),Bytes({0xFE}),Bytes({0xFF}),
+                          Bytes({'a',0xC3}),Bytes({'a',0xE2,0x82}),Bytes({'a',0xF0,0x9F,0x98}),Bytes({0xC3,0x28}),
+                          Bytes({0xE2,0x28,0xAC}),Bytes({0xE2,0x82,0x28}),Bytes({0xF0,0x9F,0x28,0x80})})
+        CHECK(!ChatTextPasses(bad) && !ChatReads(ChatRaw(1,0,static_cast<uint16_t>(bad.size()),bad)));
+    // Length counts bytes, not characters: 80 two-byte characters fill the line, and one more byte does not fit.
+    std::string accents;for(int i=0;i<80;++i) accents.append("\xC3\xA9");
+    CHECK(accents.size()==160 && ChatBytes(accents).size()==164 && ChatReads(ChatBytes(accents),&text) && text==accents);
+    CHECK(ChatBytes(accents+"a").empty() && ChatBytes(std::string(159,'a')+"\xC3\xA9").empty());
+    std::string euros;for(int i=0;i<53;++i) euros.append("\xE2\x82\xAC");
+    CHECK(euros.size()==159 && ChatBytes(euros+"a").size()==164 && ChatBytes(euros+"\xE2\x82\xAC").empty());
+    Bytes cutAtEnd(159,uint8_t('a'));cutAtEnd.push_back(0xC3);                       // 160 bytes, the last one the lead of a character
+    CHECK(!ChatReads(ChatRaw(1,0,160,cutAtEnd)));
+    CHECK(ChatBytes(std::string("a\0b",3)).empty() && ChatBytes("a\nb").empty() && ChatBytes("a\tb").empty());
+}
 }
 int main(int argc,char** argv) {
     if(argc!=2) return 2;
@@ -213,6 +293,7 @@ int main(int argc,char** argv) {
     auto unload=reinterpret_cast<void (*)()>(symbol("sco_plugin_unload"));
     CHECK(query && load && unload);if(!query || !load || !unload) return 2;
     CHECK(!std::strcmp(query()->name,"multiplayer"));
+    ChatLayoutChecks();
     sco_api api{};api.size=sizeof(api);api.major=SCO_API_MAJOR;api.minor=SCO_API_MINOR;api.register_command=Register;api.subscribe=Subscribe;api.unsubscribe=Unsubscribe;api.query_service=Query;api.log=LogFn;
     net.size=sizeof(net);net.is_active=Active;net.self_peer=Self;net.get_peers=GetPeers;net.get_peer_name=Name;net.send_channel=Send;net.register_channel=Channel;net.unregister_channel=Unchannel;
     widgets.size=sizeof(widgets);widgets.set_panel=SetPanel;widgets.remove_panel=RemovePanel;
