@@ -40,7 +40,7 @@ These are the six rules of [CONTRIBUTING.md](../CONTRIBUTING.md), "Guardrails an
    accept datagrams from, and send to, any address.
 3. **No unauthenticated remote commands between peers.** Traffic is authenticated with the passphrase but not
    encrypted. Players who need privacy connect through a VPN. The server reads no command from a player.
-4. **Public SDK surface only.** The server is built from the published SDK's `core-source` kit, downloaded and
+4. **Public SDK surface only.** The server is built from the development SDK's `core-source` kit, supplied and
    hash-checked by [cmake/ScoCoreSource.cmake](../cmake/ScoCoreSource.cmake). It uses `Core`, `udp::Socket` and
    `ScopedTransport` and the wire constants of the kit's network headers, in one file (see
    [The sco-core boundary](#the-sco-core-boundary)). Nothing of the kit is copied into this repository.
@@ -50,27 +50,23 @@ These are the six rules of [CONTRIBUTING.md](../CONTRIBUTING.md), "Guardrails an
 
 ## Build
 
-Windows and Linux. The relay uses the published kit's platform-specific UDP
+Windows and Linux. The relay uses the development kit's platform-specific UDP
 transport. Windows uses console control or an existing named stop event; POSIX
 uses its existing signal handlers. Other platforms leave the relay disabled.
 
 ```
-cmake -S . -B build
+cmake -S . -B build -DSCO_SDK_ARCHIVE_DIR=<development-assets>
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
 The root build turns the relay on on Windows/Linux when SDK fetching is enabled (`SC_MP_BUILD_RELAY`;
-`-DSC_MP_BUILD_RELAY=OFF` leaves it out). It then downloads `sco-sdk-core-source-<version>.zip` from the same
-sco-core release as the SDK archive (`SCO_SDK_VERSION` and `SCO_SDK_RELEASE_TAG` in
-[cmake/ScoSdk.cmake](../cmake/ScoSdk.cmake); today SDK 2.4.0 release candidate 2, `sdk-v2.4.0-rc.2`), refuses it
-unless its SHA-256 matches `SCO_CORE_SOURCE_SHA256` in `cmake/ScoCoreSource.cmake`, unpacks it under the build folder
+`-DSC_MP_BUILD_RELAY=OFF` leaves it out). It verifies the source-bound local
+`sco-sdk-core-source-<version>.zip` against `SCO_CORE_SOURCE_SHA256`, unpacks it under the build folder
 and adds it with `add_subdirectory` (`EXCLUDE_FROM_ALL`, the Star Citizen game pack off, the kit's own tests off).
 Only the kit's network library is built, plus `src/net/udp_win.cpp` on Windows or `src/net/udp_posix.cpp` on Linux and
-`src/net/scope.cpp`, compiled as they are. For an offline build, put the release assets in a folder and pass
-`-DSCO_SDK_ARCHIVE_DIR=<folder>` (it needs `sco-sdk-<version>.zip` and `sco-sdk-core-source-<version>.zip`); the hash
-is still checked. To move to a newer release, change `SCO_SDK_VERSION`, `SCO_SDK_RELEASE_TAG`,
-`SCO_SDK_SHA256` and `SCO_CORE_SOURCE_SHA256` together (from the release `SHA256SUMS`), then read
+`src/net/scope.cpp`, compiled as they are. `SCO_SDK_ARCHIVE_DIR` needs both archives described in the root README;
+their hashes are checked. When moving to another source or a supported release, update the SDK and source hashes together, then read
 [The sco-core boundary](#the-sco-core-boundary).
 
 The program is `build/server/sco-relay` on a single-config POSIX build, or
@@ -134,7 +130,7 @@ keep stable. So the server touches the library in one place only.
 - `server/tools/check-net-boundary.sh <extracted kit>` needs no compiler. It checks the declarations the boundary
   uses, the constants, the lines of behaviour no compiler can see (what `Core` relays and to whom, who checks the seat
   limit, the private ranges, which interface a socket binds), and the blob id of each kit file the server compiles
-  or includes (15 files, line endings ignored: the 14 the program compiles or includes, and `tests/net_mem.h`,
+  or includes (16 files, line endings ignored, including both platform socket implementations and `tests/net_mem.h`,
   which only `test_server` includes). The `static_assert`s in `server/net_boundary.cpp` say the same at
   build time.
 - `server/tests/test_net_boundary_checks.sh` (the test `net_boundary_checks`) proves that those checks fire, on altered
@@ -150,6 +146,16 @@ When `check-net-boundary.sh` or the build fails after a kit change, do this in o
 4. Change the matching line or blob id in `server/tools/check-net-boundary.sh` in the same commit that moves
    `SCO_SDK_VERSION`, `SCO_SDK_RELEASE_TAG` and the two hashes.
 5. Run `ctest`. Only when it passes, move on.
+
+Since RC2, core main commit `0c977d3` changed the UDP header and both socket
+implementations: it requests a larger receive buffer and
+adds a buffer-size query. The relay still supplies `ScopedTransport` and its
+address scope; the bind and receive boundary checks remain in force. The registry
+change itself makes no network changes. The checker
+pins the development file set and refuses mixed or changed files. For the earlier
+RC2 boundary and reproduction instructions, use sc-mp commit
+`57ac2fd3e6fd3e23a974d58c33fbd4935b9d12f0`. Linux synthetic tests do not establish Windows or
+in-game behavior.
 
 ## What is not here
 

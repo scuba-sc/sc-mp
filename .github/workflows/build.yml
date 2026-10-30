@@ -14,12 +14,35 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Builds the multiplayer plugin against the PUBLISHED sco-core SDK archive. cmake/ScoSdk.cmake downloads
-# sco-sdk-<version>.zip and refuses to build unless its SHA-256 matches the pin in that file.
-# Nothing here reads a sibling sco-core checkout. A green run is a build and a synthetic test only:
-# it is not "verified in game" (nothing has been run in game).
+# The SDK inputs below are generated from exact development source, not published assets.
+# A green run is a build and synthetic test, not game acceptance.
 jobs:
+  development-source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: scuba-sc/sco-core
+          ref: e2ad885aa3027ed1162793d30292ca103c2f5b28
+          path: core-development
+          persist-credentials: false
+      - name: Generate and verify development archives
+        run: |
+          set -eu
+          test "$(git -C core-development rev-parse HEAD)" = e2ad885aa3027ed1162793d30292ca103c2f5b28
+          mkdir -p "$RUNNER_TEMP/sdk-development"
+          python3 core-development/sdk/package.py --profile legacy --out "$RUNNER_TEMP/sdk-development"
+          python3 core-development/sdk/package.py --profile core-source --out "$RUNNER_TEMP/sdk-development"
+          cd "$RUNNER_TEMP/sdk-development"
+          printf '%s  %s\n' ff4fb3295fc6c0740f813e325c2882913be309e123deaf5fca3c9af095f2b789 sco-sdk-2.4.0.zip | sha256sum -c -
+          printf '%s  %s\n' b7677073137867314a505711c24da97b9b3bf6d3a5e56650f071dd80a84ae1aa sco-sdk-core-source-2.4.0.zip | sha256sum -c -
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-development
+          path: ${{ runner.temp }}/sdk-development/*.zip
+          if-no-files-found: error
   build:
+    needs: development-source
     strategy:
       fail-fast: false
       matrix:
@@ -34,13 +57,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Configure (downloads and verifies the SDK archive)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sdk-development
+          path: ${{ runner.temp }}/sdk-development
+
+      - name: Configure (verifies both development archives)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} "-DSCO_SDK_ARCHIVE_DIR=${{ runner.temp }}/sdk-development"
 
       - name: Build
         run: cmake --build build --config ${{ matrix.config }}
 
       # multiplayer-module-workflow: 81 synthetic-service checks of the module.
-      # multiplayer-plugin-check (Windows only): the published sco-plugin-check on the plugin folder.
+      # multiplayer-plugin-check (Windows only): the development kit's checker on the plugin folder.
       - name: Test (workflow test + sco-plugin-check)
         run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure

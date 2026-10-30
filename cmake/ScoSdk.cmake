@@ -1,27 +1,22 @@
-# Fetches the published sco-core SDK archive, verifies its SHA-256 and extracts it under the build tree.
+# Verifies the explicitly supplied development SDK archive and extracts it under the build tree.
 #
 #   SCO_SDK_VERSION       SDK version consumed by sc-mp (the archive is sco-sdk-<version>.zip)
-#   SCO_SDK_RELEASE_TAG   the sco-core release that holds the archive. SDK 2.4.0 is published as release
-#                         candidate 2, tag sdk-v2.4.0-rc.2; the final sdk-v2.4.0 has not been published yet
-#   SCO_SDK_ARCHIVE_DIR   directory holding a local copy of the release assets (sco-sdk-<version>.zip);
-#                         when set, the archive is taken from there instead of downloaded. Either way
-#                         the archive must match SCO_SDK_SHA256 or configure fails.
+#   SCO_SDK_RELEASE_TAG   a descriptive label for the development source, not a release tag
+#   SCO_SDK_ARCHIVE_DIR   directory holding the local development SDK archive; its bytes must
+#                         match SCO_SDK_SHA256 or configure fails.
 #
 # Sets SCO_SDK_ROOT (the extracted kit) and SCO_SDK_INCLUDE_DIR (its include/). The kit sources are
 # never copied into this repository, and no sibling sco-core checkout is read.
 
 set(SCO_SDK_VERSION "2.4.0" CACHE STRING "sco-core SDK version consumed by sc-mp")
-set(SCO_SDK_RELEASE_TAG "sdk-v2.4.0-rc.2" CACHE STRING "sco-core release tag that holds the SDK archives")
-set(SCO_SDK_ARCHIVE_DIR "" CACHE PATH "Local directory with the release assets of SCO_SDK_RELEASE_TAG (optional)")
-# From the release SHA256SUMS, line for sco-sdk-<version>.zip (sdk-v2.4.0-rc.2 release). Bump together with
-# SCO_SDK_VERSION and SCO_SDK_RELEASE_TAG.
-set(SCO_SDK_SHA256 "51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e"
+set(SCO_SDK_RELEASE_TAG "development-e2ad885" CACHE STRING "Label for the development SDK inputs")
+set(SCO_SDK_ARCHIVE_DIR "" CACHE PATH "Directory containing the development SDK archives")
+# Locally generated from exact development source e2ad885aa3027ed1162793d30292ca103c2f5b28; not a release asset.
+set(SCO_SDK_SHA256 "ff4fb3295fc6c0740f813e325c2882913be309e123deaf5fca3c9af095f2b789"
     CACHE STRING "SHA-256 of sco-sdk-<version>.zip")
 
 set(_sco_sdk_name "sco-sdk-${SCO_SDK_VERSION}")
 set(_sco_sdk_zip_name "${_sco_sdk_name}.zip")
-set(_sco_sdk_url
-    "https://github.com/scuba-sc/sco-core/releases/download/${SCO_SDK_RELEASE_TAG}/${_sco_sdk_zip_name}")
 set(_sco_sdk_dl_dir "${CMAKE_BINARY_DIR}/_sdk")
 set(_sco_sdk_zip "${_sco_sdk_dl_dir}/${_sco_sdk_zip_name}")
 set(_sco_sdk_src_parent "${_sco_sdk_dl_dir}/src-${SCO_SDK_SHA256}")
@@ -48,16 +43,7 @@ if(NOT _have)
     message(STATUS "sco-core SDK: using local archive ${_local}")
     file(COPY_FILE "${_local}" "${_sco_sdk_zip}")
   else()
-    message(STATUS "sco-core SDK: downloading ${_sco_sdk_url}")
-    file(DOWNLOAD "${_sco_sdk_url}" "${_sco_sdk_zip}"
-         EXPECTED_HASH SHA256=${SCO_SDK_SHA256}
-         TLS_VERIFY ON
-         STATUS _dl_status)
-    list(GET _dl_status 0 _dl_code)
-    if(NOT _dl_code EQUAL 0)
-      file(REMOVE "${_sco_sdk_zip}")
-      message(FATAL_ERROR "sco-core SDK download failed: ${_dl_status}")
-    endif()
+    message(FATAL_ERROR "Development SDK archive is required: set SCO_SDK_ARCHIVE_DIR as described in README.md")
   endif()
   _sco_sdk_hash_ok("${_sco_sdk_zip}" _have)
   if(NOT _have)

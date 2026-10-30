@@ -2,7 +2,7 @@
 
 sc-mp is the optional co-presence `multiplayer` plugin for [sc-offline](https://github.com/scuba-sc/sc-offline),
 and the home of its player-run relay server. Read [README.md](README.md) first.
-sc-mp consumes the published sco-core SDK only, and sco-core's and sc-offline's contribution rules apply
+sc-mp consumes source-bound sco-core SDK archives during development, and sco-core's and sc-offline's contribution rules apply
 here too: [sco-core CONTRIBUTING](https://github.com/scuba-sc/sco-core/blob/main/CONTRIBUTING.md),
 [sc-offline CONTRIBUTING](https://github.com/scuba-sc/sc-offline/blob/main/CONTRIBUTING.md).
 
@@ -40,7 +40,7 @@ player) belongs in `server/` next to it, in its own CMake target, with its own R
 share one wire header, `plugins/multiplayer/relay_wire.h`: a new layout gets
 a new wire version, and an old version is never reinterpreted.
 
-A relay is built from the published SDK's `core-source` profile (`sco::net::Core`, `udp::Socket`,
+A relay is built from the SDK's `core-source` profile (`sco::net::Core`, `udp::Socket`,
 `ScopedTransport`), pinned the same way as the plugin by [cmake/ScoSdk.cmake](cmake/ScoSdk.cmake). It never reads
 a sibling sco-core checkout and never copies SDK sources into this repository.
 
@@ -60,7 +60,7 @@ a sibling sco-core checkout and never copies SDK sources into this repository.
 3. **No unauthenticated remote commands between peers.** Traffic is authenticated but plaintext
    ([net-wire.md, "Known limits"](https://github.com/scuba-sc/sco-core/blob/main/docs/net-wire.md)); players
    use a VPN for confidentiality.
-4. **Public SDK surface only.** Nothing from outside the published SDK archive and its documented headers.
+4. **Public SDK surface only.** Nothing from outside the verified SDK archive and its documented headers.
 5. **A relay is never a player.** Its roster message (`multiplayer.relay`) says so; the plugin does not list it
    as a player.
 6. **Evidence.** A green CI run is a build and a synthetic test. Write "not run in game" unless a recorded

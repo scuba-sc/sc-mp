@@ -9,10 +9,8 @@ own pace; sc-offline does not ship it.
 
 ## Status
 
-Development code. **It has not been run in game.** The plugin builds against the sco-core SDK's public
-headers only (pinned to the latest published SDK 2.4.0 release candidate 2,
-[`sdk-v2.4.0-rc.2`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2),
-whose source commit is `844e136ccb280ad8cb43f73bc43c9447e8f6799d`); the headers it needs, such as
+Development code. **It has not been run in game.** The plugin builds against public
+headers from the source-bound development SDK described below; the headers it needs, such as
 `sc_private_session.h`, have shipped since SDK 2.2.0. Joining a session needs the
 host to positively admit it as offline. Treat everything here as unverified until a release says
 otherwise.
@@ -30,36 +28,41 @@ The files keep the paths they had in sc-offline, so history and patches carry ov
 
 ## Build
 
-The repo root is a standalone CMake project. It downloads the published SDK archive `sco-sdk-2.4.0.zip`
-from the latest sco-core release [`sdk-v2.4.0-rc.2`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2)
-(SDK 2.4.0 release candidate 2; the final `sdk-v2.4.0` tag is still pending), refuses it unless its SHA-256 matches the pin in
-[cmake/ScoSdk.cmake](cmake/ScoSdk.cmake), and builds against the extracted `include/`. It never reads a
-sibling sco-core checkout.
+For the current source-first development integration, generate the legacy SDK and
+core-source archives from the clean sco-core commit
+`e2ad885aa3027ed1162793d30292ca103c2f5b28` into a separate directory. They are
+development inputs, not RC2 release assets. Verify their SHA-256 values and use a
+fresh build directory:
 
-```
-cmake -S . -B build
-cmake --build build --config Release
-ctest --test-dir build -C Release --output-on-failure
+```sh
+git -C <sco-core-checkout> worktree add --detach <clean-core-worktree> e2ad885aa3027ed1162793d30292ca103c2f5b28
+python3 <clean-core-worktree>/sdk/package.py --profile legacy --out <development-assets>
+python3 <clean-core-worktree>/sdk/package.py --profile core-source --out <development-assets>
+cmake -S . -B build-development -DSCO_SDK_ARCHIVE_DIR=<development-assets>
+cmake --build build-development
+ctest --test-dir build-development --output-on-failure
 ```
 
-`ctest` runs the module workflow test (`tools/multiplayer_workflow_test.cpp`, synthetic services, no sockets,
-no game) and, on Windows, the SDK's `sco-plugin-check` on the plugin folder. With the default
-`SC_MP_BUILD_RELAY=ON`, Windows and Linux also build the relay server and run its five tests (below).
-For an offline Windows or Linux build, put the release assets in a directory and pass
-`-DSCO_SDK_ARCHIVE_DIR=<dir>`; the hash is still checked. The directory needs both
-`sco-sdk-<version>.zip` and `sco-sdk-core-source-<version>.zip` (the relay's kit), or pass
-`-DSC_MP_BUILD_RELAY=OFF`. On other platforms the relay defaults off. CI:
-[.github/workflows/build.yml](.github/workflows/build.yml) (Windows and Linux). To move to a newer SDK,
-change `SCO_SDK_VERSION`, `SCO_SDK_RELEASE_TAG` and `SCO_SDK_SHA256` together (from the release `SHA256SUMS`), and
-`SCO_CORE_SOURCE_SHA256` in `cmake/ScoCoreSource.cmake` with them. A green build is
-not "verified in game": nothing here has been run in game, and nothing new in SDK 2.4.0 has been run in game either.
+These hashes identify the locally generated archives used for this integration,
+not a published release. An appropriate supported stable release can become the
+normal baseline once it contains the required contracts and passes consumer
+checks; explicit development inputs remain available for ongoing work.
+The expected legacy archive SHA-256 is
+`ff4fb3295fc6c0740f813e325c2882913be309e123deaf5fca3c9af095f2b789`;
+the core-source archive SHA-256 is
+`b7677073137867314a505711c24da97b9b3bf6d3a5e56650f071dd80a84ae1aa`.
+The build checks both archive hashes before extraction. The plugin uses the SDK's
+public headers; the relay builds from `core-source`. CI generates these archives
+from the exact commit and tests Windows and Linux. To reproduce the earlier
+published RC2 configuration, use sc-mp commit
+`57ac2fd3e6fd3e23a974d58c33fbd4935b9d12f0` and its published-asset recipe.
 
 ## Relay support
 
 The plugin works with a relay server that is never a player (sc-offline PR #133, from an outside contributor;
 see [PROVENANCE.md](PROVENANCE.md)): it reads the server's `multiplayer.relay` roster, follows nearby-only
 forwarding, and moves ghosts from a buffer of recent poses. The relay server is in [server/](server/README.md):
-a Windows/Linux program built from the SDK's `core-source` kit (`cmake/ScoCoreSource.cmake`, downloaded and
+a Windows/Linux program built from the SDK's `core-source` kit (`cmake/ScoCoreSource.cmake`, locally supplied and
 hash-checked like the plugin SDK archive), with its socket behind the kit's `ScopedTransport`, so the LAN rule
 applies. Relay and players must use the same multiplayer protocol generation, currently 2; upgrade them together
 before starting a session. The generation is separate from binary and SDK versions; see the

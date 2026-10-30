@@ -1,14 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# Fetches the published sco-core "core-source" kit, checks its SHA-256, extracts it under the build tree and adds it
+# Verifies the development sco-core "core-source" kit, extracts it under the build tree and adds it
 # as a subproject, for the relay server (server/). It does for the kit what ScoSdk.cmake does for the SDK archive,
 # and it reads the SDK version and the download folder from there, so include ScoSdk.cmake first.
 #
-#   SCO_CORE_SOURCE_SHA256   the pin: SHA-256 of sco-sdk-core-source-<SCO_SDK_VERSION>.zip, from the SHA256SUMS of
-#                            the same release as the SDK archive (SCO_SDK_RELEASE_TAG). Bump it together with
-#                            SCO_SDK_VERSION and SCO_SDK_RELEASE_TAG.
-#   SCO_SDK_ARCHIVE_DIR      (ScoSdk.cmake) a local copy of the release assets. The kit is taken from there instead
-#                            of downloaded. Either way the archive must match the pin or configure stops, before
-#                            anything is extracted.
+#   SCO_CORE_SOURCE_SHA256   SHA-256 of the locally generated development core-source archive.
+#   SCO_SDK_ARCHIVE_DIR      directory containing both development archives. Each is checked before extraction.
 #
 # Sets SCO_CORE_SOURCE_ROOT (the extracted kit) and makes two targets available:
 #   sco_net            the kit's network library, built by the kit's own CMake file (EXCLUDE_FROM_ALL: only what
@@ -23,14 +19,12 @@ if(NOT DEFINED SCO_SDK_VERSION)
                       "configure with SC_MP_FETCH_SDK=ON, or leave SC_MP_BUILD_RELAY off")
 endif()
 
-# From the release SHA256SUMS, line for sco-sdk-core-source-<version>.zip (sdk-v2.4.0-rc.2 release).
-set(SCO_CORE_SOURCE_SHA256 "ddd1d75055f6b0efd69af4ac2eff6a18a5ff177f87cb28c938af3a625befbbb8"
+# Locally generated from the same exact development source as the plugin SDK.
+set(SCO_CORE_SOURCE_SHA256 "b7677073137867314a505711c24da97b9b3bf6d3a5e56650f071dd80a84ae1aa"
     CACHE STRING "SHA-256 of sco-sdk-core-source-<version>.zip")
 
 set(_sco_cs_name "sco-sdk-core-source-${SCO_SDK_VERSION}")
 set(_sco_cs_zip_name "${_sco_cs_name}.zip")
-set(_sco_cs_url
-    "https://github.com/scuba-sc/sco-core/releases/download/${SCO_SDK_RELEASE_TAG}/${_sco_cs_zip_name}")
 set(_sco_cs_dl_dir "${CMAKE_BINARY_DIR}/_sdk")
 set(_sco_cs_zip "${_sco_cs_dl_dir}/${_sco_cs_zip_name}")
 set(_sco_cs_src_parent "${_sco_cs_dl_dir}/core-source-${SCO_CORE_SOURCE_SHA256}")
@@ -57,25 +51,7 @@ if(NOT _have)
     message(STATUS "sco-core source kit: using local archive ${_local}")
     file(COPY_FILE "${_local}" "${_sco_cs_zip}")
   else()
-    message(STATUS "sco-core source kit: downloading ${_sco_cs_url}")
-    file(DOWNLOAD "${_sco_cs_url}" "${_sco_cs_zip}"
-         EXPECTED_HASH SHA256=${SCO_CORE_SOURCE_SHA256}
-         TLS_VERIFY ON
-         TIMEOUT 600
-         INACTIVITY_TIMEOUT 60
-         STATUS _dl_status)
-    list(GET _dl_status 0 _dl_code)
-    if(NOT _dl_code EQUAL 0)
-      file(REMOVE "${_sco_cs_zip}")
-      # EXPECTED_HASH makes file(DOWNLOAD) fail when the bytes are not the pin, and says so in the status. Any other
-      # failure (no network, a TLS error) is a download failure and is reported as one.
-      if(_dl_status MATCHES "HASH mismatch")
-        message(FATAL_ERROR "sco-core source kit ${_sco_cs_zip_name} is not the one pinned: its SHA-256 is not "
-                            "${SCO_CORE_SOURCE_SHA256} (hash mismatch): ${_dl_status}; refusing to build it")
-      endif()
-      message(FATAL_ERROR "sco-core source kit download failed: ${_dl_status}. Check the network, or pass "
-                          "-DSCO_SDK_ARCHIVE_DIR=<folder> with the release assets.")
-    endif()
+    message(FATAL_ERROR "Development core-source archive is required: set SCO_SDK_ARCHIVE_DIR as described in README.md")
   endif()
   # Whichever way the file arrived, it is checked here, before anything is extracted.
   _sco_cs_hash_ok("${_sco_cs_zip}" _have)
