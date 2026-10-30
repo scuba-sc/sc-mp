@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# What this is: the systemd unit for sco-relay. server/deploy/install.sh copies it to /etc/systemd/system and enables it.
+# It runs the program as the unprivileged sco-relay account with the one config file, and sends the relay's log (it
+# writes to stderr) to the journal: read it with "journalctl -u sco-relay".
+#
+# The relay needs no special rights: it reads its config, opens one UDP port above 1023 and writes to its log. The
+# sandbox lines below take away everything else, so a flaw in the relay would find little to work with.
+#
+# A bad config makes the relay exit with status 1 at once. The restart limit (three tries in a minute, five seconds
+# apart) stops that from becoming an endless loop, and still brings the relay back after a one-off crash. A clean
+# stop (SIGTERM, "systemctl stop") exits 0 and is not restarted.
+[Unit]
+Description=sco-relay, the sc-mp relay server (for a LAN or a VPN)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=sco-relay
+Group=sco-relay
+ExecStart=/usr/local/bin/sco-relay /etc/sco-relay/sco-relay.conf
+Restart=on-failure
+RestartSec=5
+# The relay stops within one pass of its loop; a stop that takes longer than this is stuck.
+TimeoutStopSec=15
+
+# Sandbox: no new privileges, no capabilities, a read-only system, no home folders, no devices beyond the basic ones,
+# and only IPv4 and IPv6 sockets (the relay opens one IPv4 UDP socket).
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
