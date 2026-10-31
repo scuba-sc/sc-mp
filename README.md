@@ -69,6 +69,14 @@ Background: [docs/relay-roadmap.md](docs/relay-roadmap.md). Not run in game.
 Current single-player, listen-host, relay-only, and future authoritative-server boundaries are
 summarized in [docs/session-modes.md](docs/session-modes.md).
 
+## Text chat
+
+Players in a session can send each other short lines of text from the plugin's panel, in a session a player hosts and
+through a relay server alike. It is plain text and **not encrypted** (use a VPN, as for the rest of the traffic), and
+a player on a plugin build without it never sees it. It adds one channel, `multiplayer.chat`, and leaves protocol
+generation 2 unchanged, so the relay is the same program. **Not run in game**: only synthetic tests have run, and
+how it looks in game is left to testers. Rules and limits: [plugins/multiplayer/README.md](plugins/multiplayer/README.md#text-chat).
+
 ## Licence
 
 GPL-3.0-only ([LICENSE](LICENSE)). Where it came from: [PROVENANCE.md](PROVENANCE.md). How to contribute, and

@@ -15,14 +15,15 @@ own; an old version is never reinterpreted.
 ## Synchronized upgrades
 
 Upgrade the relay and all players together to builds implementing the same multiplayer protocol
-generation (currently 2). The generation is an application compatibility contract, not a binary
+generation (which one it is, and what it covers, is in the plugin's
+[protocol instructions](../plugins/multiplayer/README.md#co-presence-not-shared-simulation)). The generation is an application compatibility contract, not a binary
 version; different builds implementing the same contract are compatible. The relay announces its
 generation and role on `multiplayer.protocol` alongside its roster and forwards player announcements
 on that reliable channel, including in nearby-only mode. A current plugin excludes peers without
 matching evidence and shows their pending or incompatible status. The existing sco.net handshake
 cannot refuse a peer based on this application generation or remove an individual peer; an older
-client can still establish a transport session and report it connected. See the plugin's
-[protocol instructions](../plugins/multiplayer/README.md) for the local gate and its limits.
+client can still establish a transport session and report it connected. The protocol instructions
+describe the local gate and its limits.
 
 ## Guardrails, and where the server meets them
 
@@ -94,8 +95,40 @@ counts the server). It stops on SIGTERM or Ctrl+C: it tells the players, logs a 
 status 1 means it could not start (the message says why), 2 means it was started the wrong way.
 
 If your players join through a VPN, add its range to `allowed_addresses`. If the machine has a firewall, allow the
-UDP port for your LAN or VPN network only. How the plugin joins and what it shows: the "Joining a relay server"
-section of [plugins/multiplayer/README.md](../plugins/multiplayer/README.md).
+UDP port for your LAN or VPN network only. What players' sc-offline accepts is said under
+[Install on a Linux server](#install-on-a-linux-server). How the plugin joins and what it shows: the "Joining a relay
+server" section of [plugins/multiplayer/README.md](../plugins/multiplayer/README.md).
+
+## Install on a Linux server
+
+```
+sudo sh server/deploy/install.sh
+```
+
+Run from your own copy of this repository on a plain Linux machine, it copies the tree into a new root-owned folder and
+checks the copy as a safeguard against common mistakes (it refuses symbolic links, files owned by anyone but root and the
+user who ran `sudo`, and files writable by everyone or by a group that is not root's or the owner's private group; it
+does not defend against someone who already controls your copy, so run it only from a copy you trust). Then it installs the
+missing build tools (on Debian and Ubuntu; elsewhere it names them), builds only the copy's relay with the default Unix
+Makefiles generator from the pinned SDK download (it makes no other network call), and installs it as
+`/usr/local/bin/sco-relay` with an account of its own. It makes `/etc/sco-relay/sco-relay.conf` (mode 0640, owner root,
+group `sco-relay`) with a fresh random passphrase that it never prints and keeps when you run it again. With systemd it
+starts the relay as a service that comes back after a reboot and returns. Without systemd the same command stays in the
+foreground as the relay (Ctrl+C or SIGTERM stops it, exit 0), after printing the command for starting it again later.
+[deploy/README.md](deploy/README.md) lists exactly what is checked, every step, every file it changes, and how to remove it.
+
+- **Passphrase.** The `passphrase =` line of `/etc/sco-relay/sco-relay.conf`. Give it to your players.
+- **Port.** UDP 64091 (the `port` setting). Open it in your firewall for your LAN or VPN network only; the installer
+  changes no firewall.
+- **Who can join.** The LAN rule (guardrail 2) applies: the relay drops every address except loopback and the private
+  ranges. A rented server reached over public addresses therefore needs a VPN whose addresses are private, or
+  `allowed_addresses` naming the ranges the players come from. Players' sc-offline currently blocks CGNAT ranges such as
+  `100.64.0.0/10` (found by reading its source, not run in game), so a VPN in that range may not work for them yet.
+
+No container image is shipped. **Not run on a real VM. Not run in game.** The kit was run from a committed copy in fresh
+`ubuntu:24.04` and `debian:12` containers and in an `ubuntu:24.04` container running systemd: install, start, a join with
+the generated passphrase, stop, start again, a second install that keeps the passphrase, and (with systemd) a restart of
+the container with the enabled service coming back.
 
 ## Tests
 
@@ -123,14 +156,19 @@ keep stable. So the server touches the library in one place only.
 - `server/tools/check-no-game-code.sh` (the test `relay_no_game_code`) reads the production set only,
   `server/*.cpp`, `server/*.h` and `cmake/ScoCoreSource.cmake`. It fails when any file but the boundary file
   includes one of the library's headers (the `sco/net/` ones or `sc_net.h`) or writes `sco::net::`, even in a
-  comment; when an `#include` is not one of our own headers, `plugins/multiplayer/relay_wire.h` (the only file
-  outside `server/` that is allowed), or a standard or POSIX header (plus `windows.h` in `main.cpp` under `_WIN32` and
-  `sal.h` in `log.h` under `_MSC_VER`; other Windows headers and uses outside those files need explicit allowances; a
-  name with `..` in it is never allowed, even `server/../...`); when the kit was not configured with `SCO_GAME_SC=OFF`; and when the program links anything
-  but the server library, the kit's network library and the two socket files, or those libraries hold other objects.
+  comment; when an `#include` is not one of our own `server/<name>` headers (a header in a subfolder such as
+  `server/tests/` is not one), `plugins/multiplayer/relay_wire.h` (the only file outside `server/` that is allowed), or a
+  standard or POSIX header (plus `windows.h` in `main.cpp` under `_WIN32` and `sal.h` in `log.h` under `_MSC_VER`;
+  other Windows headers and uses outside those files need explicit allowances; a name with `..` in it is never
+  allowed, even `server/../...`); when the kit was not configured with `SCO_GAME_SC=OFF`; and when the program links
+  anything but the server library, the kit's network library and the two socket files, or those libraries hold other
+  objects. It finds an `#include` wherever it hides: behind a comment between the `#` and `include`, after a
+  backslash-newline splice, or spelt with the `%:` digraph.
   The link is read twice: from what CMake declares for each target, including the libraries a target passes on to
-  whatever links it (`INTERFACE_LINK_LIBRARIES`), and from the program's real link line where the generator writes
-  one (`link.txt` with Makefiles).
+  whatever links it (`INTERFACE_LINK_LIBRARIES`), and from the program's real link line, the `link.txt` that Makefile
+  generators write. The check fails when that file is missing: Ninja writes none, so the relay is checked with a
+  Makefile generator (the default on Linux). It splits the words of the link line on commas, so a library inside a
+  `-Wl,...` list counts like any other, and it fails on an `@response` file, which would hide the words from it.
 - `server/tools/check-net-boundary.sh <extracted kit>` needs no compiler. It checks the declarations the boundary
   uses, the constants, the lines of behaviour no compiler can see (what `Core` relays and to whom, who checks the seat
   limit, the private ranges, which interface a socket binds), and the blob id of each kit file the server compiles
@@ -154,9 +192,10 @@ When `check-net-boundary.sh` or the build fails after a kit change, do this in o
 ## What is not here
 
 These stay in the contributor's standalone relay and can come in later, separate pull requests: the fake-player rig
-and its tests, the 50-player test build, the deploy kit (install script, systemd unit, container image), the
-measurement tools, and the long architecture and report documents. Windows relay builds and tests are already
-supported.
+and its tests, the 50-player test build, the measurement tools, and the long architecture and report documents.
+The install kit for Linux (an install script and a systemd unit) is in [deploy/](deploy/README.md); there is no
+container image, no release binary (the kit builds from source on the machine that runs the relay) and no Windows
+installer. Windows relay builds and tests are already supported.
 
 ## Files
 
@@ -176,4 +215,5 @@ supported.
 - `run_loop.h`, `run_loop.cpp`: one pass of the loop and the stats line.
 - `log.h`, `log.cpp`: the operator log.
 - `sco-relay.example.conf`: every setting, one comment line each.
+- `deploy/`: the install kit for Linux: `install.sh`, the systemd unit `sco-relay.service`, and its README.
 - `tests/`, `tools/`: the tests and the two checks above.
