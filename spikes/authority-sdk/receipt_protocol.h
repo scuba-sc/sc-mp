@@ -10,15 +10,17 @@ enum class Status:uint8_t { Queued, Applied, Invalid, Old, Stale, Conflict, Over
 inline bool terminal(Status s){return s!=Status::Queued && s!=Status::Overload && s!=Status::Gap;}
 struct Command {uint64_t epoch, id; int32_t delta;};
 struct Result {uint64_t peer, epoch, id; Status status; int32_t value;};
-struct Authority {
- static constexpr size_t queueLimit=16, receiptLimit=8, peerLimit=16;
- static uint64_t incarnation(){
-  static std::atomic<uint64_t> n{0};
+namespace detail {
+ inline uint64_t allocateIncarnation(std::atomic<uint64_t>& n){
   uint64_t previous=n.load(std::memory_order_relaxed);
   do { if(previous==UINT64_MAX)throw std::runtime_error("epoch exhausted"); }
   while(!n.compare_exchange_weak(previous,previous+1,std::memory_order_relaxed));
   return previous+1;
  }
+}
+struct Authority {
+ static constexpr size_t queueLimit=16, receiptLimit=8, peerLimit=16;
+ static uint64_t incarnation(){static std::atomic<uint64_t> n{0};return detail::allocateIncarnation(n);}
  Authority()=default;
  Authority(const Authority&)=delete;
  Authority& operator=(const Authority&)=delete;
