@@ -61,10 +61,21 @@ would otherwise revive a masked named reader; inherited default ACLs could give 
 unintended readers. Existing secrets already exposed are not made secret again by this check:
 rotate them after correcting permissions.
 
-Serialize installation with administrative policy/account/config edits. Rechecks catch drift
-between phases but do not lock NSS, sudoers, userdb or filesystem policy and do not eliminate a
-privileged check/use race. A concurrent administrator can change these after the last check;
-that actor is inside this trust boundary. No cross-host policy scan is represented as a guarantee.
+Before building or changing accounts or installed files, the installer atomically creates
+`/run/sco-relay-installer.lock`; another instance refuses while that directory exists. The `/run`
+parent must be a real root-owned directory, not group/other writable, with only base ACL entries.
+On normal exit and handled signals after the script records ownership it attempts to remove the
+lock. A cleanup failure, a signal during the brief acquisition window, or an uncatchable termination
+such as SIGKILL can leave it behind: first verify no installer is running, then an administrator
+may remove the empty lock directory or reboot. The installer never removes an existing lock on
+another run's behalf.
+
+Serialize installation with administrative policy/account/config edits. The installer lock does
+not lock NSS, sudoers, userdb or filesystem policy and does not eliminate a privileged check/use
+race. A concurrent administrator can change these after the last check; that actor is inside this
+trust boundary. Failures after installation starts can leave a partially updated installation and
+require an operator to inspect it before retrying. No cross-host policy scan is represented as a
+guarantee.
 
 ## What it does, in this order
 

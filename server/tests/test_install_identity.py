@@ -4,12 +4,23 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
 
 INSTALLER = Path(__file__).resolve().parents[1] / 'deploy' / 'install.sh'
+
+
+def relocate_paths(script, base, prefixes):
+    # Rewrite original source paths in one pass: the sandbox root can itself
+    # contain /run or /etc (for example, a /runner workspace).
+    pattern = '|'.join(re.escape(p) for p in sorted(prefixes, key=len, reverse=True))
+    return re.sub(r'(?<![A-Za-z0-9_./-])(?:' + pattern + r')(?![A-Za-z0-9_.-])',
+                  lambda match: str(base) + match.group(), script)
+
+
 STUB = r'''
 import json, os, pathlib, sys
 name = pathlib.Path(sys.argv[0]).name
@@ -83,7 +94,7 @@ class IdentitySandbox(unittest.TestCase):
         self.log = self.base / 'mutations'
         self.sentinel = self.base / 'accounts-files-service'
         self.sentinel.write_text('UNCHANGED')
-        commands = ('uname dirname getent id awk cut sed head tr tar mktemp mkdir rm '
+        commands = ('uname dirname getent id awk cut sed head tr tar mktemp mkdir rmdir rm '
                     'cmake g++ make apt-get nproc groupadd useradd usermod groupmod '
                     'install od grep chown chmod mv systemctl sleep setpriv su nologin find stat getfacl')
         for name in commands.split():
@@ -103,11 +114,13 @@ class IdentitySandbox(unittest.TestCase):
                'LC_ALL': 'C'}
         etc = self.base / 'etc'
         etc.mkdir(exist_ok=True)
+        run = self.base / 'run'
+        run.mkdir(exist_ok=True)
         (etc / 'nsswitch.conf').write_text(nss.read_text())
         (etc / 'login.defs').write_text('')
         # macOS /etc is itself a symlink; all filesystem preflight belongs in the sandbox.
         script = self.base / 'install.sh'
-        text = INSTALLER.read_text().replace('/etc', str(etc))
+        text = relocate_paths(INSTALLER.read_text(), self.base, ('/etc', '/run'))
         text = text.replace('root=$(cd "$here/../.." && pwd)', 'root=' + str(INSTALLER.parents[2]))
         text = text.replace('here=$(cd "$(dirname "$0")" && pwd)', 'here=' + str(INSTALLER.parent))
         script.write_text(text)
@@ -123,6 +136,15 @@ class IdentitySandbox(unittest.TestCase):
         self.assertEqual(self.sentinel.read_text(), 'UNCHANGED')
 
 class InstallerIdentity(IdentitySandbox):
+    def test_path_relocation_with_runner_workspace(self):
+        base = Path('/runner/workspace/fixture')
+        original = ('config=/etc/nsswitch.conf\nlock=/run/sco-relay.lock\n'
+                    'unchanged=/runner/data /var/run/socket x/run/file /etc2/x\n')
+        expected = ('config=/runner/workspace/fixture/etc/nsswitch.conf\n'
+                    'lock=/runner/workspace/fixture/run/sco-relay.lock\n'
+                    'unchanged=/runner/data /var/run/socket x/run/file /etc2/x\n')
+        self.assertEqual(relocate_paths(original, base, ('/etc', '/run')), expected)
+
     def test_shared_explicit_group_member(self):
         self.data['group'][1] += 'intruder'
         self.assert_refused()
@@ -200,17 +222,17 @@ class InstallerIdentity(IdentitySandbox):
                 self.data[table].append(row)
                 self.assert_refused()
 
-    def test_fresh_identity_reaches_copy_boundary(self):
+    def test_fresh_identity_reaches_lock_boundary(self):
         self.data['passwd'].pop()
         self.data['group'].pop()
         result = self.run_installer()
-        self.assertIn('sandbox mutation boundary: mktemp', result.stderr)
-        self.assertEqual(self.log.read_text().split()[0], 'mktemp')
+        self.assertIn('cannot acquire installation lock', result.stderr)
+        self.assertEqual(self.log.read_text().split()[0], 'mkdir')
 
-    def test_safe_existing_identity_reaches_copy_boundary(self):
+    def test_safe_existing_identity_reaches_lock_boundary(self):
         result = self.run_installer()
-        self.assertIn('sandbox mutation boundary: mktemp', result.stderr)
-        self.assertEqual(self.log.read_text().split()[0], 'mktemp')
+        self.assertIn('cannot acquire installation lock', result.stderr)
+        self.assertEqual(self.log.read_text().split()[0], 'mkdir')
 
 
 if __name__ == '__main__':

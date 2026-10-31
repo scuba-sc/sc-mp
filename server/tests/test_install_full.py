@@ -14,9 +14,9 @@ import subprocess
 import sys
 import unittest
 if __package__:
-    from .test_install_identity import IdentitySandbox, INSTALLER, STUB
+    from .test_install_identity import IdentitySandbox, INSTALLER, STUB, relocate_paths
 else:
-    from test_install_identity import IdentitySandbox, INSTALLER, STUB
+    from test_install_identity import IdentitySandbox, INSTALLER, STUB, relocate_paths
 
 FULL = r'''
 base = pathlib.Path(os.environ['SANDBOX'])
@@ -45,6 +45,8 @@ elif name == 'mktemp':
         print(path)
 elif name == 'mkdir':
     confined(args[-1]).mkdir()
+elif name == 'rmdir':
+    confined(args[-1]).rmdir()
 elif name == 'tar':
     log()
     if '-cf' in args:
@@ -57,6 +59,8 @@ elif name == 'stat':
     print('0:' + str(p.stat().st_nlink) + ':' + format(p.stat().st_mode & 0o777, 'o'))
 elif name == 'getfacl':
     p = confined(args[-1])
+    if data.get('getfacl_failure'):
+        sys.exit(1)
     print(data.get('acl', {}).get(str(p.relative_to(base)), 'user::rwx\ngroup::r-x\nother::---'))
 elif name == 'find':
     print('d 0 0 700 ' + str(confined(args[0])))
@@ -70,6 +74,15 @@ elif name == 'cmake':
     log()
     if args == ['--version']: print('cmake version 3.25.1')
     if '--build' in args:
+        if data.get('block_build'):
+            import time
+            (base / 'build-blocked').touch()
+            deadline = time.monotonic() + 20
+            while not (base / 'allow-build').exists() and time.monotonic() < deadline:
+                time.sleep(.05)
+            if not (base / 'allow-build').exists(): sys.exit(1)
+        if data.get('fail_build'):
+            sys.exit(1)
         out = confined(args[1]) / 'server' / 'sco-relay'
         out.parent.mkdir(parents=True)
         out.write_text('fake relay binary\n')
@@ -78,6 +91,10 @@ elif name == 'cmake':
             config = base / 'etc/sco-relay/sco-relay.conf'
             config.unlink()
             config.symlink_to(base / 'unrelated-file')
+        if data.get('config_dir_symlink_after_build'):
+            directory = base / 'etc/sco-relay'
+            directory.rename(base / 'saved-config-dir')
+            directory.symlink_to(base / 'unrelated-dir', target_is_directory=True)
         data.update(data.get('after_build', {}))
         save()
 elif name == 'nproc': print('2')
@@ -109,12 +126,30 @@ elif name == 'mv':
     confined(args[0]).rename(confined(args[1]))
 elif name in ('systemctl', 'sleep', 'setpriv', 'su'):
     log()
+    if name in ('setpriv', 'su') and (base / 'run/sco-relay-installer.lock').exists():
+        sys.exit(1)
 else:
     raise AssertionError('unexpected command: ' + name + ' ' + repr(args))
 '''
 
 
 class FullInstaller(IdentitySandbox):
+    def test_full_install_from_runner_named_workspace(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'runner' / 'sc-mp'
+            for relative in ('CMakeLists.txt', 'server/main.cpp', 'server/sco-relay.example.conf',
+                             'server/deploy/sco-relay.service', 'server/deploy/install.sh',
+                             'server/tests/test_install_identity.py', 'server/tests/test_install_full.py'):
+                destination = root / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(INSTALLER.parents[2] / relative, destination)
+            self.assertIn('/runner/', str(root))
+            result = subprocess.run([sys.executable, '-m', 'unittest',
+                                     'server.tests.test_install_full.FullInstaller.test_full_foreground_install'],
+                                    cwd=root, text=True, capture_output=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def setUp(self):
         super().setUp()
         self.source = self.base / 'source'
@@ -123,10 +158,9 @@ class FullInstaller(IdentitySandbox):
                          'server/deploy/sco-relay.service'):
             origin = INSTALLER.parents[2] / relative
             shutil.copyfile(origin, self.source / relative)
-        script = INSTALLER.read_text()
         # Relocate literal filesystem accesses, retaining the real shell flow.
-        for prefix in ('/etc', '/usr/local', '/usr/lib/userdb', '/run', '/var/tmp'):
-            script = script.replace(prefix, str(self.base) + prefix)
+        script = relocate_paths(INSTALLER.read_text(), self.base,
+                                ('/etc', '/usr/local', '/usr/lib/userdb', '/run', '/var/tmp'))
         self.script = self.source / 'server' / 'deploy' / 'install.sh'
         self.script.write_text(script)
         for path in ('etc/ssl/certs', 'run/systemd/system', 'var/tmp'):
@@ -140,7 +174,7 @@ class FullInstaller(IdentitySandbox):
                             ''.join('    ' + line + '\n' for line in FULL.splitlines()))
             stub.chmod(0o755)
 
-    def run_installer(self):
+    def start_installer(self):
         fixture = self.base / 'identities.json'
         fixture.write_text(json.dumps(self.data))
         (self.base / 'etc/nsswitch.conf').write_text(self.data.get('nss',
@@ -148,8 +182,18 @@ class FullInstaller(IdentitySandbox):
         (self.base / 'etc/login.defs').write_text(self.data.get('ranges', ''))
         env = {'PATH': str(self.bin), 'IDENTITY_DATA': str(fixture), 'SANDBOX': str(self.base),
                'IDENTITY_LOG': str(self.log), 'LC_ALL': 'C'}
-        return subprocess.run(['/bin/sh', str(self.script)], env=env,
-                              text=True, capture_output=True, timeout=30)
+        return subprocess.Popen(['/bin/sh', str(self.script)], env=env,
+                                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def run_installer(self):
+        process = self.start_installer()
+        try:
+            stdout, stderr = process.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+            raise
+        return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
 
     def test_config_hardlink_refused_before_mutation(self):
         directory = self.base / 'etc/sco-relay'
@@ -201,6 +245,102 @@ class FullInstaller(IdentitySandbox):
         self.assertIn('unsafe config ACL', result.stderr)
         self.assertIn('cmake --build', self.log.read_text())
         self.assertNotIn('install ', self.log.read_text())
+
+    def test_post_build_acl_read_failure_refused_before_install(self):
+        self.data['after_build'] = {'getfacl_failure': True}
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('cannot check config ACL', result.stderr)
+        self.assertIn('cmake --build', self.log.read_text())
+        self.assertNotIn('install ', self.log.read_text())
+        self.assertNotIn('chown ', self.log.read_text())
+        self.assertNotIn('chmod ', self.log.read_text())
+
+    def test_existing_installation_lock_is_not_removed(self):
+        lock = self.base / 'run/sco-relay-installer.lock'
+        lock.mkdir()
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('cannot acquire installation lock', result.stderr)
+        self.assertTrue(lock.is_dir())
+        self.assertFalse(self.log.exists())
+
+    def test_unsafe_lock_parent_is_refused(self):
+        run = self.base / 'run'
+        run.chmod(0o777)
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('unsafe config ownership', result.stderr)
+        self.assertFalse(self.log.exists())
+        run.chmod(0o755)
+        self.data['acl'] = {'run': 'user::rwx\nuser:1001:rwx\ngroup::r-x\nmask::rwx\nother::r-x'}
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('unsafe config ACL', result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_symlink_lock_parent_is_refused(self):
+        self.data['nss'] = 'passwd: files\ngroup: files\nshadow: files\ngshadow: files\n'
+        run = self.base / 'run'
+        run.rename(self.base / 'other-run')
+        run.symlink_to(self.base / 'other-run', target_is_directory=True)
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('unsafe lock parent', result.stderr)
+        self.assertFalse(self.log.exists())
+        self.assertFalse((self.base / 'other-run/sco-relay-installer.lock').exists())
+
+    def test_build_failure_releases_owned_lock(self):
+        self.data['fail_build'] = True
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('cmake --build', self.log.read_text())
+        self.assertFalse((self.base / 'run/sco-relay-installer.lock').exists())
+        self.assertEqual(list((self.base / 'var/tmp').iterdir()), [])
+
+    def test_concurrent_install_cannot_reach_build(self):
+        import time
+        self.data['block_build'] = True
+        first = self.start_installer()
+        try:
+            deadline = time.monotonic() + 20
+            while not (self.base / 'build-blocked').exists() and time.monotonic() < deadline:
+                if first.poll() is not None:
+                    break
+                time.sleep(.05)
+            self.assertTrue((self.base / 'build-blocked').exists(), 'first installer did not reach build')
+            before = self.log.read_text()
+            second = self.run_installer()
+            self.assertNotEqual(second.returncode, 0)
+            self.assertIn('cannot acquire installation lock', second.stderr)
+            self.assertEqual(self.log.read_text(), before)
+            self.assertTrue((self.base / 'run/sco-relay-installer.lock').is_dir())
+        finally:
+            (self.base / 'allow-build').touch()
+            stdout, stderr = first.communicate(timeout=30)
+        self.assertEqual(first.returncode, 0, stderr)
+        self.assertFalse((self.base / 'run/sco-relay-installer.lock').exists())
+        self.assertIn('done. The relay runs', stdout)
+
+    def test_termination_releases_owned_lock(self):
+        import signal
+        import time
+        self.data['block_build'] = True
+        process = self.start_installer()
+        try:
+            deadline = time.monotonic() + 20
+            while not (self.base / 'build-blocked').exists() and time.monotonic() < deadline:
+                if process.poll() is not None:
+                    break
+                time.sleep(.05)
+            self.assertTrue((self.base / 'build-blocked').exists(), 'installer did not reach build')
+            process.send_signal(signal.SIGTERM)
+        finally:
+            (self.base / 'allow-build').touch()
+            stdout, stderr = process.communicate(timeout=30)
+        self.assertNotEqual(process.returncode, 0, stdout + stderr)
+        self.assertFalse((self.base / 'run/sco-relay-installer.lock').exists())
+        self.assertFalse((self.base / 'usr/local/bin/sco-relay').exists())
 
     def test_full_systemd_install_and_config_preserving_upgrade(self):
         result = self.run_installer()
@@ -291,6 +431,7 @@ class FullInstaller(IdentitySandbox):
         self.assertIn('setpriv --reuid=sco-relay --regid=sco-relay --init-groups', self.log.read_text())
         self.assertNotIn('systemctl ', self.log.read_text())
         self.assertEqual(list((self.base / 'var/tmp').iterdir()), [])
+        self.assertFalse((self.base / 'run/sco-relay-installer.lock').exists())
 
     def test_config_symlink_refused_without_chowning_target(self):
         directory = self.base / 'etc/sco-relay'
@@ -328,6 +469,26 @@ class FullInstaller(IdentitySandbox):
         self.assertNotIn('chmod ', self.log.read_text())
         self.assertEqual(target.read_text(), 'must stay untouched')
         self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+
+    def test_post_build_config_directory_symlink_refused_before_install(self):
+        directory = self.base / 'etc/sco-relay'
+        directory.mkdir()
+        (directory / 'sco-relay.conf').write_text('original config')
+        target = self.base / 'unrelated-dir'
+        target.mkdir()
+        marker = target / 'marker'
+        marker.write_text('must stay untouched')
+        self.data['config_dir_symlink_after_build'] = True
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('unsafe config path', result.stderr)
+        self.assertIn('cmake --build', self.log.read_text())
+        self.assertNotIn('install ', self.log.read_text())
+        self.assertNotIn('chown ', self.log.read_text())
+        self.assertNotIn('chmod ', self.log.read_text())
+        self.assertEqual(marker.read_text(), 'must stay untouched')
+        self.assertEqual((self.base / 'saved-config-dir/sco-relay.conf').read_text(),
+                         'original config')
 
     def test_provider_records_refused_before_build(self):
         userdb = self.base / 'etc/userdb'

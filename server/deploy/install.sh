@@ -31,6 +31,7 @@ program=/usr/local/bin/sco-relay
 config_dir=/etc/sco-relay
 config=$config_dir/sco-relay.conf
 unit_target=/etc/systemd/system/sco-relay.service
+lock_dir=/run/sco-relay-installer.lock
 
 say() { echo "install: $*"; }
 die() { echo "install: $*" >&2; exit 1; }
@@ -38,9 +39,14 @@ die() { echo "install: $*" >&2; exit 1; }
 # What this script makes and must not leave behind: the half-made config and the build folder (which holds the copy).
 build_dir=""
 temporary=""
+lock_held=""
 cleanup() {
     [ -z "$temporary" ] || rm -f "$temporary"
     [ -z "$build_dir" ] || rm -rf "$build_dir"
+    if [ -n "$lock_held" ]; then
+        rmdir "$lock_dir" || echo "install: cannot remove installation lock $lock_dir; inspect it before retrying" >&2
+        lock_held=""
+    fi
 }
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
@@ -188,7 +194,9 @@ validate_identity
 # Refuse extended/default ACLs instead of silently repairing operator-managed policy.
 validate_config_paths() {
     command -v getfacl > /dev/null 2>&1 || die "getfacl is required to check config ACLs (install the acl package)"
-    for path in /etc "$config_dir" "$config"; do
+    # The lock lives directly under /run, so its parent needs the same write/ACL safeguards.
+    [ ! -L /run ] && [ -d /run ] || die "unsafe lock parent: /run"
+    for path in /etc /run "$config_dir" "$config"; do
         [ ! -L "$path" ] || die "unsafe config path: $path"
         [ -e "$path" ] || continue
         case $path in
@@ -214,6 +222,14 @@ validate_config_paths() {
     done
 }
 validate_config_paths
+
+# mkdir is atomic and the checked /run parent is not writable by unprivileged users.
+# Do not remove a pre-existing lock: it may belong to another live installation.
+# A signal between mkdir and recording ownership can leave an empty stale lock.
+if ! (umask 077; mkdir "$lock_dir") 2>/dev/null; then
+    die "cannot acquire installation lock $lock_dir; another install may be running or a stale lock needs inspection"
+fi
+lock_held=yes
 
 # ---- a copy of the tree, checked --------------------------------------------------------------------------------------
 # The build folder is made new by mktemp: owned by root, mode 0700, empty. An existing folder is never used, because a folder
