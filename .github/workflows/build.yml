@@ -85,10 +85,10 @@ jobs:
       - name: Configure Windows with published RC2
         if: ${{ !matrix.development }}
         run: >-
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DSC_MP_NET_BOUNDARY_PROFILE=rc2
-          -DSCO_SDK_VERSION=2.4.0 -DSCO_SDK_RELEASE_TAG=sdk-v2.4.0-rc.2
-          -DSCO_SDK_SHA256=51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e
-          -DSCO_CORE_SOURCE_SHA256=ddd1d75055f6b0efd69af4ac2eff6a18a5ff177f87cb28c938af3a625befbbb8
+          cmake -S . -B build "-DCMAKE_BUILD_TYPE=${{ matrix.config }}" "-DSC_MP_NET_BOUNDARY_PROFILE=rc2"
+          "-DSCO_SDK_VERSION=2.4.0" "-DSCO_SDK_RELEASE_TAG=sdk-v2.4.0-rc.2"
+          "-DSCO_SDK_SHA256=51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e"
+          "-DSCO_CORE_SOURCE_SHA256=ddd1d75055f6b0efd69af4ac2eff6a18a5ff177f87cb28c938af3a625befbbb8"
 
       - name: Build
         run: cmake --build build --config ${{ matrix.config }}
