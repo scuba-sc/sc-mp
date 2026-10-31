@@ -1,5 +1,7 @@
 #include "sco/net/core.h"
-#include "net_mem.h"
+#include "bounded_mem.h"
+#include "receipt_fixture.h"
+namespace nettest = boundedtest;
 #include <stdexcept>
 #include <cstdio>
 #include <string>
@@ -49,11 +51,53 @@ struct Fixture {
    pump(5000);authority.drain();return authority.value;
  }
 };
+static int run_receipt_cli(const std::string& mode) {
+ receipt_fixture::Fixture f;
+ const bool rejected = mode == "rejected";
+ const bool old = mode == "old";
+ if(old) { for(int id=1;id<=9;++id) { f.authority.admit(100,{f.authority.epoch,uint64_t(id),1}); f.authority.step(); } }
+ const int count = (rejected || old) ? 1 : 2;
+ // The paths describe this fixture's synthetic submissions, not real topologies.
+ std::array<bool,2> local{mode=="solo" || mode=="listen" || old,mode=="solo"};
+ std::array<receipt::Status,2> localStatus{receipt::Status::Queued,receipt::Status::Queued};
+ auto submit=[&](int n) {
+  const int delta=rejected ? 101 : (n==0 ? 8 : 4);
+  if(local[n]) localStatus[n]=f.authority.admit(100+n,{f.authority.epoch,1,delta}).status;
+  else f.send(n+1,1,delta);
+ };
+ for(int n=0;n<count;++n) submit(n);
+ bool done=false, refused=false;
+ const char* reason="none";
+ for(int attempt=0;attempt<4 && !done && !refused;++attempt) {
+  f.pump(500);
+  for(auto r:f.authority.step()) {
+   if(r.peer>=100 && r.peer<102) localStatus[r.peer-100]=r.status;
+   else f.emit(r);
+  }
+  f.pump(500);
+  done=true;
+  for(int n=0;n<count;++n) {
+   auto it=f.results[n+1].find(1);
+   auto status=local[n] ? localStatus[n] : (it==f.results[n+1].end()?receipt::Status::Queued:it->second.status);
+   if(status==receipt::Status::Old) {
+    done=false; reason="old";
+   } else if(!receipt::terminal(status)) {
+    done=false;
+    if(attempt<3) submit(n);
+   } else if(status!=receipt::Status::Applied) {refused=true; done=false; reason=status==receipt::Status::Invalid?"invalid":"terminal-refusal";}
+  }
+ }
+ const char* outcome=refused?"refused":(done?"applied":"unknown");
+ std::printf("{\"mode\":\"%s\",\"provider\":\"synthetic-only\",\"real_topology_available\":false,\"sc_world_available\":false,\"command_paths\":[\"%s\"",mode.c_str(),local[0]?"local":"remote");
+ if(count==2) std::printf(",\"%s\"",local[1]?"local":"remote");
+ std::printf("],\"outcome\":\"%s\",\"reason\":\"%s\",\"value\":%d}\n",outcome,reason,f.authority.value);
+ return done?0:1;
+}
 int main(int argc,char**argv) { try {
- if(argc!=2) throw std::runtime_error("usage: authority-cli test|solo|listen|dedicated|sc-world");
+ if(argc!=2) throw std::runtime_error("usage: authority-cli test|solo|listen|dedicated|rejected|old|sc-world");
  std::string mode=argv[1];
  if(mode=="sc-world") throw std::runtime_error("SC world unavailable: synthetic provider only");
- if(mode!="test") {if(mode!="solo"&&mode!="listen"&&mode!="dedicated") throw std::runtime_error("unknown mode");Fixture f;auto state=f.run(mode);std::printf("{\"mode\":\"%s\",\"provider\":\"synthetic-only\",\"sc_world_available\":false,\"value\":%d}\n",mode.c_str(),state);return state==12?0:1;}
+ if(mode!="test") {if(mode!="solo"&&mode!="listen"&&mode!="dedicated"&&mode!="rejected"&&mode!="old") throw std::runtime_error("unknown mode");return run_receipt_cli(mode);}
  for(const auto&mode:{"solo","listen","dedicated"}) {Fixture f; REQUIRE(f.run(mode)==12);std::printf("PASS %s state=12\n",mode);}
  {Fixture f; f.net.loss=0.25; f.net.dup=0.30; f.net.maxDelayMs=80; REQUIRE(f.run("dedicated")==12); std::puts("PASS SDK reliable progress seeded loss/reorder/duplicate");}
  {Fixture f; std::vector<uint8_t> captured; f.net.tap=[&](auto&d){Packet p;if(captured.empty() && d.from==f.tr[1]->Self() && d.to==f.tr[0]->Self() && Parse(d.bytes.data(),d.bytes.size(),&p)==ParseError::Ok && p.h.kind==Kind::Data) captured=d.bytes;return true;}; const uint8_t x=8; REQUIRE(f.core[1]->Send("mp.intent",&x,1)==SendResult::Ok); f.pump(400); REQUIRE(!captured.empty()); REQUIRE(f.authority.pending.size()==1); f.authority.drain(); REQUIRE(f.authority.value==8); f.net.tap=nullptr; auto before=f.core[0]->GetStats(); f.net.Inject(f.tr[1]->Self(),f.tr[0]->Self(),captured); f.pump(100); auto after=f.core[0]->GetStats(); REQUIRE(after.replayed==before.replayed+1); REQUIRE(after.badTag==before.badTag); REQUIRE(after.spoofed==before.spoofed); REQUIRE(f.authority.pending.empty()); f.authority.drain(); REQUIRE(f.authority.value==8); std::puts("PASS SDK authenticated DATA replay rejected without duplicate intent");}

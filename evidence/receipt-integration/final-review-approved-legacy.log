@@ -1,0 +1,16 @@
+PASS solo state=12
+PASS listen state=12
+PASS dedicated state=12
+PASS SDK reliable progress seeded loss/reorder/duplicate
+PASS SDK authenticated DATA replay rejected without duplicate intent
+PASS stale authority queue
+PASS queued disconnect revoked
+PASS process-local authority incarnations differ
+PASS SDK source spoof and tamper rejection
+PASS SDK wrong passphrase
+PASS SDK bounded reliable queue and shutdown
+PASS authority queue bound
+PASS reconnect rejects old wire and queued intent
+PASS coordinated restart rejects old wire and accepts fresh intent
+PASS forced DATA loss and ordered SDK retransmission
+PASS dispatch overflow explicit rejection count

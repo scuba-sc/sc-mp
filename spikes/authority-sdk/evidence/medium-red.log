@@ -1,0 +1,9 @@
+$ c++ -std=c++17 -DRED_ARCHIVE -I<LOCAL_HOME>/.hermes/cache/scratch/sc-mp-authority-sdk-20261030/sdk/sco-sdk-core-source-2.4.0/tests -I<LOCAL_HOME>/.hermes/cache/scratch/sc-mp-authority-sdk-20261030/sdk/sco-sdk-core-source-2.4.0/include medium_tests.cpp -o <LOCAL_HOME>/.hermes/cache/scratch/medium-red && <LOCAL_HOME>/.hermes/cache/scratch/medium-red
+In file included from medium_tests.cpp:2:
+In file included from <LOCAL_HOME>/.hermes/cache/scratch/sc-mp-authority-sdk-20261030/sdk/sco-sdk-core-source-2.4.0/tests/net_mem.h:6:
+<LOCAL_HOME>/.hermes/cache/scratch/sc-mp-authority-sdk-20261030/sdk/sco-sdk-core-source-2.4.0/include/sco/net/transport.h:19:46: warning: defaulted comparison operators are a C++20 extension [-Wc++20-extensions]
+   19 |     bool operator==(const Endpoint&) const = default;
+      |                                              ^
+1 warning generated.
+FAIL: bounded datagram count: expected 256, got 257
+exit status: 1

@@ -1,0 +1,4 @@
+FAIL b.peers.empty()
+PASS application receipt distinguishes queued from applied
+PASS bounded receipts old refusal overload recovery
+PASS permanent rejection conflict gap session scope disconnect

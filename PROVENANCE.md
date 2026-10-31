@@ -12,6 +12,15 @@ files; that PR's CHANGELOG and `docs/features.md` hunks belong to sc-offline and
 sc-offline's own lineage and third-party notices:
 [THIRD_PARTY_NOTICES.md](https://github.com/scuba-sc/sc-offline/blob/main/THIRD_PARTY_NOTICES.md).
 
+## Experimental bounded medium
+
+`spikes/authority-sdk/bounded_mem.h` adapts `tests/net_mem.h` from the published
+sco-core `sdk-v2.4.0-rc.2` core-source kit, source
+`844e136ccb280ad8cb43f73bc43c9447e8f6799d`, under GPL-3.0-only. The adapted helper
+adds shared queue/payload limits, rejection accounting, and fail-closed receive.
+The repository GPL license applies; this attribution does not settle the pending
+outside-contribution rights below.
+
 ## Outside contributions
 
 Code from anyone other than the maintainer is recorded here when it lands, under the terms in
