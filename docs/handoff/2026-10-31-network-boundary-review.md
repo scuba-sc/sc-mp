@@ -18,12 +18,19 @@ below is still a draft; another core source requires a fresh review and pins.
   core inputs must be confirmed independently by the core integration owner.
   A second packaging from the same clean checkout and environment produced
   byte-identical copies of both archives; this is not independent verification.
-- Coordinated core #304 head: `571fe8e2c911d7c63c372103724896feaabe58f2`.
+- Earlier coordinated core #304 head: `571fe8e2c911d7c63c372103724896feaabe58f2`.
   The 16 reviewed network files are unchanged from `1166c9f`. Locally packaged
   legacy SDK SHA-256 is `67f4f837879867ac6d953a2953c448ce7913a9da924d6e04931a48988f23b9c1`;
   core-source SHA-256 is `35242e00989de3afd61f24a7a67dfd4958c3331222bea9e121f952452477d1ab`.
-  The `dev-571` profile binds this pair. These local hashes do not authenticate
-  the source or establish publication of an SDK.
+  These local hashes do not authenticate the source or establish publication
+  of an SDK.
+- Current coordinated core #304 head: `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`.
+  Its only change from `571fe8e` normalizes the Windows CRLF test fixture;
+  the reviewed network files are unchanged. The locally generated legacy SDK
+  SHA-256 is `bb52b8bf1cab5aea09939e68a387705149411ce6c8af48e3f3f2576fc8a83c31`
+  and core-source SHA-256 is `5239c2820049eaae43185272771085eb443871430b2ef0cff17b07fc72fba166`.
+  The `dev-1b` profile binds this exact pair. Independent local packaging and
+  inventory/IP audits reproduced the pair; it is not a published SDK release.
 - Historical sc-mp source-first branch `f91582b20fc9ada848ce4223e4e408d460ff2cb7`
   was context. Its 16 checked network blob IDs were independently compared
   with #304 source `1166c9f`: all 16 matched.

@@ -30,7 +30,7 @@ def main():
         if result.returncode:
             raise RuntimeError(f"matching kit configure failed:\n{result.stdout}")
         print("ok   matching kit accepted with tests disabled")
-        other = "dev-571" if profile == "rc2" else "rc2"
+        other = "dev-1b" if profile == "rc2" else "rc2"
         refused(configure((f"-DSC_MP_NET_BOUNDARY_PROFILE={other}",)),
                 "does not match the reviewed", "mismatched profile and archive pair")
 

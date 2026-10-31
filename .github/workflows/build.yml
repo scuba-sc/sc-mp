@@ -18,9 +18,9 @@ concurrency:
 # verify the same development archive hashes. A separate Windows job retains
 # published RC2 coverage. These are synthetic tests, not game acceptance.
 env:
-  CORE_DEVELOPMENT_SHA: 571fe8e2c911d7c63c372103724896feaabe58f2
-  DEVELOPMENT_SDK_SHA256: 67f4f837879867ac6d953a2953c448ce7913a9da924d6e04931a48988f23b9c1
-  DEVELOPMENT_SOURCE_SHA256: 35242e00989de3afd61f24a7a67dfd4958c3331222bea9e121f952452477d1ab
+  CORE_DEVELOPMENT_SHA: 1b6782bc5c8b7d189cdff4c83e81957f09af35d7
+  DEVELOPMENT_SDK_SHA256: bb52b8bf1cab5aea09939e68a387705149411ce6c8af48e3f3f2576fc8a83c31
+  DEVELOPMENT_SOURCE_SHA256: 5239c2820049eaae43185272771085eb443871430b2ef0cff17b07fc72fba166
 
 jobs:
   build:
@@ -105,7 +105,7 @@ jobs:
           cmake -S . -B build -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=${{ matrix.config }} \
             -DSCO_SDK_ARCHIVE_DIR="$RUNNER_TEMP/sc-mp-development-sdk" \
             -DSCO_SDK_SHA256="$DEVELOPMENT_SDK_SHA256" -DSCO_CORE_SOURCE_SHA256="$DEVELOPMENT_SOURCE_SHA256" \
-            -DSC_MP_NET_BOUNDARY_PROFILE=dev-571
+            -DSC_MP_NET_BOUNDARY_PROFILE=dev-1b
 
       - name: Configure Windows with coordinated development archives
         if: matrix.development && runner.os == 'Windows'
@@ -114,7 +114,7 @@ jobs:
           $archives = Join-Path $env:RUNNER_TEMP 'sc-mp-development-sdk'
           cmake -S . -B build "-DCMAKE_BUILD_TYPE=${{ matrix.config }}" "-DSCO_SDK_ARCHIVE_DIR=$archives" `
             "-DSCO_SDK_SHA256=$env:DEVELOPMENT_SDK_SHA256" "-DSCO_CORE_SOURCE_SHA256=$env:DEVELOPMENT_SOURCE_SHA256" `
-            "-DSC_MP_NET_BOUNDARY_PROFILE=dev-571"
+            "-DSC_MP_NET_BOUNDARY_PROFILE=dev-1b"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Configure Windows with published RC2
