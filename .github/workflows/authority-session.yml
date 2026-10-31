@@ -1,0 +1,95 @@
+name: authority-session
+
+on:
+  pull_request:
+  push:
+    branches: [roadmap/authoritative-session-20261031]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+
+env:
+  CORE_SHA: 7ee83fa95680aa482d8b160987b472547a67b888
+  ARCHIVE_SHA256: 865b26f6416474ffdb061ced49d1a0fb9d2fe31ac4857f30c46db45351c6c6c5
+  INVENTORY_SHA256: 908bd2674577dc435fce4bbf97c2cbbb75637ccba00de9375dafd3949cb09d0a
+
+jobs:
+  linux-clang:
+    name: Linux / Clang 18 / Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check out exact core source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: scuba-sc/sco-core
+          ref: ${{ env.CORE_SHA }}
+          path: .ci-authority-core
+          persist-credentials: false
+        env:
+          GIT_CONFIG_COUNT: "2"
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: "false"
+          GIT_CONFIG_KEY_1: core.eol
+          GIT_CONFIG_VALUE_1: lf
+      - name: Package and verify core-source kit
+        shell: bash
+        run: |
+          set -eu
+          core="$RUNNER_TEMP/authority-core"
+          archives="$RUNNER_TEMP/authority-archives"
+          extraction="$RUNNER_TEMP/authority-extracted"
+          test ! -e "$core"
+          test ! -e "$archives"
+          test ! -e "$extraction"
+          mv "$GITHUB_WORKSPACE/.ci-authority-core" "$core"
+          test "$(git -C "$core" rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C "$core" status --porcelain=v1 --untracked-files=all)"
+          mkdir "$archives" "$extraction"
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 "$core/sdk/package.py" --profile core-source --out "$archives"
+          test -z "$(git -C "$core" status --porcelain=v1 --untracked-files=all)"
+          archive="$archives/sco-sdk-core-source-2.4.0.zip"
+          printf '%s  %s\n' "$ARCHIVE_SHA256" "$archive" | sha256sum --check --strict
+          python3 - "$archive" "$extraction" <<'PY'
+          import pathlib, stat, sys, zipfile
+          archive, destination = sys.argv[1:]
+          seen = set()
+          with zipfile.ZipFile(archive) as z:
+              entries = z.infolist()
+              if len(entries) > 1024 or sum(i.file_size for i in entries) > 64 * 1024 * 1024:
+                  raise SystemExit("archive exceeds extraction bounds")
+              for i in entries:
+                  p = pathlib.PurePosixPath(i.filename)
+                  mode = i.external_attr >> 16
+                  if (p.is_absolute() or not p.parts or p.parts[0] != "sco-sdk-core-source-2.4.0"
+                          or any(part in (".", "..") for part in p.parts)
+                          or "\\" in i.filename or i.filename in seen
+                          or (mode and not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)))):
+                      raise SystemExit("unsafe archive entry")
+                  seen.add(i.filename)
+              z.extractall(destination)
+          PY
+          kit="$extraction/sco-sdk-core-source-2.4.0"
+          printf '%s  %s\n' "$INVENTORY_SHA256" "$kit/SHA256SUMS" | sha256sum --check --strict
+          echo "SDK_ROOT=$kit" >> "$GITHUB_ENV"
+      - name: Build and test synthetic session
+        shell: bash
+        run: |
+          set -eu
+          command -v clang-18
+          command -v clang++-18
+          clang-18 --version
+          clang++-18 --version
+          cmake -S spikes/authority-session -B "$RUNNER_TEMP/authority-build" \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_CXX_COMPILER=clang++-18 -DSDK_ROOT="$SDK_ROOT"
+          cmake --build "$RUNNER_TEMP/authority-build" --target authority-session authority-model-tests --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/authority-build" --output-on-failure --timeout 120
