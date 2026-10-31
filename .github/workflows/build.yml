@@ -14,9 +14,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Ubuntu packages the coordinated core source and validates the exact development
-# archive pair locally. Windows uses the published RC2 pair; its result does not
-# validate the newer core. Both jobs run synthetic tests, not game acceptance.
+# Linux and Windows independently package the exact coordinated source and
+# verify the same development archive hashes. A separate Windows job retains
+# published RC2 coverage. These are synthetic tests, not game acceptance.
 env:
   CORE_DEVELOPMENT_SHA: 571fe8e2c911d7c63c372103724896feaabe58f2
   DEVELOPMENT_SDK_SHA256: 67f4f837879867ac6d953a2953c448ce7913a9da924d6e04931a48988f23b9c1
@@ -33,6 +33,10 @@ jobs:
             config: Release
             label: Windows / published RC2
             development: false
+          - os: windows-2022
+            config: Release
+            label: Windows / coordinated core
+            development: true
           - os: ubuntu-24.04
             config: Release
             label: Linux / coordinated core
@@ -51,9 +55,15 @@ jobs:
           ref: ${{ env.CORE_DEVELOPMENT_SHA }}
           path: .ci-core-input
           persist-credentials: false
+        env:
+          GIT_CONFIG_COUNT: "2"
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: "false"
+          GIT_CONFIG_KEY_1: core.eol
+          GIT_CONFIG_VALUE_1: lf
 
-      - name: Build and verify coordinated development archives
-        if: matrix.development
+      - name: Build and verify coordinated development archives on Linux
+        if: matrix.development && runner.os == 'Linux'
         shell: bash
         run: |
           set -eu
@@ -73,14 +83,39 @@ jobs:
             --source-commit "$CORE_DEVELOPMENT_SHA" --sdk-sha256 "$DEVELOPMENT_SDK_SHA256" \
             --core-source-sha256 "$DEVELOPMENT_SOURCE_SHA256"
 
+      - name: Build and verify coordinated development archives on Windows
+        if: matrix.development && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $core = Join-Path $env:RUNNER_TEMP 'sc-mp-core-source'
+          $archives = Join-Path $env:RUNNER_TEMP 'sc-mp-development-sdk'
+          if ((Test-Path -LiteralPath $core) -or (Test-Path -LiteralPath $archives)) { throw 'Development input path already exists' }
+          Move-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE '.ci-core-input') -Destination $core
+          $env:PYTHONDONTWRITEBYTECODE = '1'
+          python tools/test_package_dev_sdk.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/package_dev_sdk.py --core $core --out $archives --source-commit $env:CORE_DEVELOPMENT_SHA `
+            --sdk-sha256 $env:DEVELOPMENT_SDK_SHA256 --core-source-sha256 $env:DEVELOPMENT_SOURCE_SHA256
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Configure Linux with coordinated development archives
-        if: matrix.development
+        if: matrix.development && runner.os == 'Linux'
         shell: bash
         run: |
           cmake -S . -B build -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=${{ matrix.config }} \
             -DSCO_SDK_ARCHIVE_DIR="$RUNNER_TEMP/sc-mp-development-sdk" \
             -DSCO_SDK_SHA256="$DEVELOPMENT_SDK_SHA256" -DSCO_CORE_SOURCE_SHA256="$DEVELOPMENT_SOURCE_SHA256" \
             -DSC_MP_NET_BOUNDARY_PROFILE=dev-571
+
+      - name: Configure Windows with coordinated development archives
+        if: matrix.development && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archives = Join-Path $env:RUNNER_TEMP 'sc-mp-development-sdk'
+          cmake -S . -B build "-DCMAKE_BUILD_TYPE=${{ matrix.config }}" "-DSCO_SDK_ARCHIVE_DIR=$archives" `
+            "-DSCO_SDK_SHA256=$env:DEVELOPMENT_SDK_SHA256" "-DSCO_CORE_SOURCE_SHA256=$env:DEVELOPMENT_SOURCE_SHA256" `
+            "-DSC_MP_NET_BOUNDARY_PROFILE=dev-571"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Configure Windows with published RC2
         if: ${{ !matrix.development }}

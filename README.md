@@ -81,9 +81,9 @@ kit changes one, review the difference before updating those checks, and do not 
 [network boundary review](docs/handoff/2026-10-31-network-boundary-review.md); a new source and its artifacts require
 a new review and pins. Published SDK pins remain the default until a separately reviewed change updates them.
 Development input results are not release, Windows, LAN or game evidence.
-The hosted Linux job builds and tests the `dev-571` pair from that exact source;
-the hosted Windows job currently tests the published RC2 pair. Windows testing
-against the coordinated development source is still outstanding.
+The hosted Linux and Windows development jobs build and test the `dev-571`
+pair from that exact source. A separate hosted Windows job tests the published
+RC2 pair. Check each job's result for its actual platform evidence.
 
 ## Relay support
 
