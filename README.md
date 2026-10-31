@@ -56,6 +56,30 @@ change `SCO_SDK_VERSION`, `SCO_SDK_RELEASE_TAG` and `SCO_SDK_SHA256` together (f
 `SCO_CORE_SOURCE_SHA256` in `cmake/ScoCoreSource.cmake` with them. A green build is
 not "verified in game": nothing here has been run in game, and nothing new in SDK 2.4.0 has been run in game either.
 
+### Coordinated development SDK inputs
+
+For local cross-repository testing, obtain both archives and their expected SHA-256 hashes from the core
+integration owner, together with the full coordinated core commit and SDK version. Verify the pair before
+configuring. The verifier checks both hashes, archive profiles, SDK and ABI versions, and the core commit in
+each archive's compatibility metadata. This checks consistency against the supplied values; it does not
+authenticate their source or turn a development artifact into a published SDK.
+
+```sh
+python3 tools/verify_dev_sdk.py --archive-dir "$ARCHIVES" --version "$VERSION" \
+  --source-commit "$CORE_COMMIT" --sdk-sha256 "$SDK_SHA256" --core-source-sha256 "$SOURCE_SHA256" &&
+cmake -S . -B build-dev -G 'Unix Makefiles' -DSCO_SDK_ARCHIVE_DIR="$ARCHIVES" \
+  -DSCO_SDK_VERSION="$VERSION" -DSCO_SDK_SHA256="$SDK_SHA256" \
+  -DSCO_CORE_SOURCE_SHA256="$SOURCE_SHA256" &&
+cmake --build build-dev &&
+ctest --test-dir build-dev --output-on-failure
+```
+
+The CMake build checks the supplied hashes again. Use a fresh build directory and record the exact source and
+archive hashes with results. The relay boundary checks deliberately pin reviewed SDK source files: when a new
+kit changes one, review the difference before updating those checks, and do not bypass a failure. Published SDK
+pins remain the default until a separately reviewed change updates them. Development input results are not release,
+Windows, LAN or game evidence.
+
 ## Relay support
 
 The plugin works with a relay server that is never a player (sc-offline PR #133, from an outside contributor;
