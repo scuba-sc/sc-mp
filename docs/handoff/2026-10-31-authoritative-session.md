@@ -70,6 +70,13 @@ is structured synthetic state; no credentials or peer-supplied names are logged.
 The fixture uses a fixed test credential with PBKDF2 work factor two and cannot
 be exposed as an operational service.
 
+Receipt retries work only for the same active peer in the current epoch and
+retention window. Leave invalidates retrieval before cache lookup: an exact
+replay of a still-retained applied command returns `Disconnected`. A receipt
+lost at disconnect therefore leaves the old outcome unknown, not unapplied.
+Internal tombstones prevent reuse; reconnect grants a fresh peer/entity and
+provides no old receipt or identity recovery.
+
 ## Executed acceptance
 
 - The existing MP #16 `spikes/authority-sdk` baseline passes all five CTest
@@ -78,7 +85,11 @@ be exposed as an operational service.
   relabeled as new multi-process fault-injection evidence.
 - The new model test covers ownership, stable retained receipts, conflict,
   stale epoch, gaps, eviction, disconnect, lifetime capacity and revision
-  exhaustion. Checks remain active under `NDEBUG`.
+  exhaustion. A targeted regression discards an applied receipt, leaves before
+  eviction, then verifies that replay returns `Disconnected` without mutation;
+  a fresh peer cannot use the old entity or recover the old receipt. This models
+  loss of an application receipt, not injected network loss. Checks remain
+  active under `NDEBUG`.
 - Fifteen process cases cover dedicated two-client ownership, listen local and
   remote policy, duplicates/conflicts, gap retry, invalid deltas, receipt eviction,
   explicit reconnect, killed-server cold restart with stale-epoch refusal,

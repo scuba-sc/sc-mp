@@ -56,7 +56,12 @@ are consecutive and never wrap. The immutable payload includes target entity and
 delta. A transport send success means only SDK queue admission. The application
 receipt establishes application outcome.
 
-- An identical retained command returns its original terminal receipt, including
+The following receipt-cache rules apply only after validating the current epoch
+and an active originating peer. A stale epoch returns `Stale`; an inactive or
+unknown peer returns `Disconnected` before any cached outcome is consulted.
+
+- While the originating peer remains active, an identical retained command
+  returns its original terminal receipt, including
   the value/revision observed at that command. It does not mutate again.
 - Reusing a retained ID with a different payload returns `Conflict`; this is a
   diagnostic about the variant, not a replacement outcome for the original.
@@ -76,7 +81,10 @@ must retain their immutable command and sequence history; losing that history
 requires an explicit new participant session, not guessing the next ID. A snapshot
 cannot reconstruct an evicted command outcome. No automatic
 retry scheduler or general progress guarantee is supplied. A caller may explicitly
-retry the exact command within the current epoch and receipt window.
+retry the exact command only as the same still-active peer, within the current
+epoch and receipt window. Disconnect ends receipt retrieval, even for a receipt
+still retained in memory. A missing receipt at disconnect leaves that caller's
+outcome unknown; `Disconnected` does not mean the command was never applied.
 
 Receipts/context/snapshots use host-only channels; commands use host-directed
 channels. Addressed result fields are routing information, not confidentiality:
@@ -86,9 +94,14 @@ contains only synthetic state.
 ## Lifecycle, persistence and recovery
 
 Disconnect revokes the peer's entity and removes its active state. Its high-water
-mark and bounded receipts remain as a tombstone for the epoch. Explicit reconnect
-creates a new transport peer and entity; there is no authority transfer or resume
-token. A silent client failure is observed through the SDK timeout, not instantly.
+mark and bounded receipts remain as an internal tombstone for the epoch, not a
+post-disconnect receipt-retrieval service. The active-peer check precedes cached
+receipt lookup: even an exact replay of a retained applied command returns
+`Disconnected` after leave, without applying it again. Its reported value/revision
+is not an original-command receipt or proof of non-application. Explicit reconnect
+creates a new transport peer and entity; it cannot recover the old peer's outcomes
+or ownership. There is no authority transfer or resume token. A silent client
+failure is observed through the SDK timeout, not instantly.
 The implementation must not infer disconnect from a missing application receipt.
 
 Process stop or crash loses **all** state, receipts and membership. Recovery is
