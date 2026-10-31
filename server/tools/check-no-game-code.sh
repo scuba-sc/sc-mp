@@ -21,7 +21,7 @@
 # (a raw string literal, a backslash followed by blanks at a line end, a comment that never ends) is refused too.
 # Exit 0 means every check passed.
 #
-# Only the production set is read: server/*.cpp, server/*.h and cmake/ScoCoreSource.cmake. Not server/tests,
+# Only the production set is read: server/*.cpp, server/*.h and the SDK CMake modules. Not server/tests,
 # server/tools or any document.
 #
 # Usage: sh server/tools/check-no-game-code.sh <repository root> <build facts file>
@@ -157,8 +157,8 @@ is_allowed_system_header() {   # <source basename> <header name>
     return 1
 }
 
-# The production set: the server's sources and the one CMake module that fetches the kit.
-production="server/*.cpp server/*.h cmake/ScoCoreSource.cmake"
+# Include the shared verifier and both modules that load it in the source scan.
+production="server/*.cpp server/*.h cmake/ScoCoreSource.cmake cmake/ScoSdk.cmake cmake/VerifyExtractedKit.cmake"
 
 # Only the boundary file names the network library: not an include, not a type, not a comment.
 leaks=$(cd "$root" && grep -lE 'sco/net/|sc_net\.h|sco_net\.h|sco::net::' $production | grep -vxF 'server/net_boundary.cpp')

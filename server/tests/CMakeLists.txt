@@ -57,15 +57,22 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME relay_install_source
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_install_source.py")
   set_tests_properties(relay_install_source PROPERTIES TIMEOUT 120)
+  add_test(NAME relay_boundary_config
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_boundary_config.py"
+            "${SCO_RELAY_ROOT}" "${CMAKE_COMMAND}" "${CMAKE_BINARY_DIR}/_sdk"
+            "${SC_MP_NET_BOUNDARY_PROFILE}" "${SCO_SDK_SHA256}" "${SCO_CORE_SOURCE_SHA256}")
+  set_tests_properties(relay_boundary_config PROPERTIES TIMEOUT 600)
 endif()
 add_test(NAME sco_relay_program
   COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/test_program.sh" "$<TARGET_FILE:sco-relay>")
 set_tests_properties(sco_relay_program PROPERTIES TIMEOUT 300)
 
 # The compiler is the one this build uses, so the header test and the compile-time checks see what the build sees.
+set(SC_MP_NET_OTHER_KIT_FOR_TESTS "" CACHE PATH "Optional other reviewed kit for mixed-source negative tests")
 add_test(NAME net_boundary_checks
   COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/test_net_boundary_checks.sh"
-          "${SCO_RELAY_ROOT}" "${SCO_CORE_SOURCE_ROOT}" "${CMAKE_CXX_COMPILER}")
+          "${SCO_RELAY_ROOT}" "${SCO_CORE_SOURCE_ROOT}" "${CMAKE_CXX_COMPILER}"
+          "${SC_MP_NET_BOUNDARY_PROFILE}" "${SC_MP_NET_OTHER_KIT_FOR_TESTS}")
 set_tests_properties(net_boundary_checks PROPERTIES TIMEOUT 600)
 
 # What the build looks like, written when CMake generates, for server/tools/check-no-game-code.sh: where the

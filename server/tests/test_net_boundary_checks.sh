@@ -7,13 +7,15 @@
 # behaviour, a file changed anywhere else, and a file gone. The second part compiles
 # server/net_boundary.cpp (syntax only) against altered headers, to prove the static_asserts fire, and
 # compiles net_boundary.h with no sco-core include path at all. CTest runs it as net_boundary_checks.
-# Usage: sh test_net_boundary_checks.sh <repository root> <extracted sco-core source kit> [C++ compiler]
+# Usage: sh test_net_boundary_checks.sh <repository root> <extracted sco-core source kit> [C++ compiler] [profile] [other reviewed kit]
 #        Without a compiler only the first part runs.
 set -u
 
 root=${1:-}
 core=${2:-}
 cxx=${3:-}
+profile=${4:-rc2}
+other=${5:-}
 if [ -z "$root" ] || [ -z "$core" ] || [ ! -f "$root/server/tools/check-net-boundary.sh" ] || [ ! -f "$core/include/sco/net/core.h" ]; then
     echo "usage: sh test_net_boundary_checks.sh <repository root> <extracted sco-core source kit> [C++ compiler]" >&2
     exit 2
@@ -46,7 +48,7 @@ copy_of_the_files() {   # <name>
 }
 
 run_checker() {   # <sco-core dir>: leaves the output in $out and the exit status in $status
-    out=$(sh "$checker" "$1" 2>&1)
+    out=$(sh "$checker" "$1" "$profile" 2>&1)
     status=$?
 }
 
@@ -109,6 +111,33 @@ echo "// a change the line checks do not look at" >> "$dir/include/sco/net/udp.h
 run_checker "$dir"
 check "a change anywhere else in a file the boundary reads fails" '[ "$status" -eq 1 ]'
 check "  and names the file" 'says "include/sco/net/udp.h" && says "has changed"'
+
+for file in src/net/udp_posix.cpp src/net/udp_win.cpp; do
+    dir=$(copy_of_the_files "changed-$(basename "$file")")
+    echo "// unreviewed change" >> "$dir/$file"
+    run_checker "$dir"
+    check "a change in $file fails" '[ "$status" -eq 1 ] && says "$file"'
+done
+
+dir=$(copy_of_the_files metadata)
+echo ' ' >> "$dir/COMPATIBILITY.json"
+run_checker "$dir"
+check "changed source metadata fails" '[ "$status" -eq 1 ] && says "COMPATIBILITY.json"'
+
+# When the other reviewed kit is available, exercise actual cross-profile mixes,
+# including the metadata. This supplements the always-run mutation cases above.
+if [ -n "$other" ]; then
+    for file in COMPATIBILITY.json include/sco/net/udp.h src/net/udp_posix.cpp src/net/udp_win.cpp; do
+        dir=$(copy_of_the_files "mixed-$(basename "$file")")
+        if [ ! -f "$other/$file" ] || cmp -s "$core/$file" "$other/$file"; then
+            bad "cross-profile fixture differs: $file"
+        else
+            cp "$other/$file" "$dir/$file"
+            run_checker "$dir"
+            check "mixed-profile $file fails" '[ "$status" -eq 1 ] && says "$file"'
+        fi
+    done
+fi
 
 dir=$(copy_of_the_files gone)
 rm "$dir/src/net/scope.cpp"

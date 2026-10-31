@@ -18,6 +18,25 @@ set(SCO_SDK_ARCHIVE_DIR "" CACHE PATH "Local directory with the release assets o
 set(SCO_SDK_SHA256 "51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e"
     CACHE STRING "SHA-256 of sco-sdk-<version>.zip")
 
+# A relay build uses one reviewed pair. Validate the SDK side before unpacking
+# it or using its headers; the source-kit side is checked in ScoCoreSource.cmake.
+if(SC_MP_BUILD_RELAY)
+  set(SC_MP_NET_BOUNDARY_PROFILE "rc2" CACHE STRING "Reviewed relay network boundary profile (rc2 or dev-1166)")
+  set_property(CACHE SC_MP_NET_BOUNDARY_PROFILE PROPERTY STRINGS rc2 dev-1166)
+  if(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "rc2")
+    set(_relay_sdk_sha "51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e")
+    set(_relay_sdk_sums "6c30f314fe7e1016801eeb333851243fc705d47500c2ce6034f20c34835bdc8c")
+  elseif(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "dev-1166")
+    set(_relay_sdk_sha "8fa4097adf980e182695083fe8a164716ae7200fd1715f19af35a98e0f40a9d5")
+    set(_relay_sdk_sums "e0a7123d019fa811a0021fa76224028e81b46267437b2844315f07105a4a4196")
+  else()
+    message(FATAL_ERROR "Unknown SC_MP_NET_BOUNDARY_PROFILE: ${SC_MP_NET_BOUNDARY_PROFILE}")
+  endif()
+  if(NOT SCO_SDK_VERSION STREQUAL "2.4.0" OR NOT SCO_SDK_SHA256 STREQUAL _relay_sdk_sha)
+    message(FATAL_ERROR "SDK archive pair does not match the reviewed ${SC_MP_NET_BOUNDARY_PROFILE} network boundary profile")
+  endif()
+endif()
+
 set(_sco_sdk_name "sco-sdk-${SCO_SDK_VERSION}")
 set(_sco_sdk_zip_name "${_sco_sdk_name}.zip")
 set(_sco_sdk_url
@@ -76,6 +95,11 @@ if(NOT EXISTS "${SCO_SDK_ROOT}/SHA256SUMS")
   if(NOT EXISTS "${SCO_SDK_ROOT}/SHA256SUMS")
     message(FATAL_ERROR "sco-core SDK archive did not contain ${_sco_sdk_name}/SHA256SUMS")
   endif()
+endif()
+
+if(SC_MP_BUILD_RELAY)
+  include("${CMAKE_CURRENT_LIST_DIR}/VerifyExtractedKit.cmake")
+  sc_mp_verify_extracted_kit("${SCO_SDK_ROOT}" "${_relay_sdk_sums}" "SDK")
 endif()
 
 set(SCO_SDK_INCLUDE_DIR "${SCO_SDK_ROOT}/include" CACHE PATH "Extracted public SDK include directory" FORCE)

@@ -20,7 +20,8 @@
 # change server/net_boundary.cpp if the change needs it, then update the lines and blob ids below in the same
 # commit that moves the pin.
 #
-# Usage: sh server/tools/check-net-boundary.sh <kit-dir>   the folder CMake extracted the kit to
+# Usage: sh server/tools/check-net-boundary.sh <kit-dir> [rc2|dev-1166]
+#        rc2 is the default; dev-1166 is a provisional, separately reviewed file set.
 #        sh server/tools/check-net-boundary.sh --list-files  prints the files the checks read, one per line
 # CMake runs it through server/tests/test_net_boundary_checks.sh, which also runs it on altered copies to prove
 # it fails when it should.
@@ -29,11 +30,13 @@ set -u
 root=$(cd "$(dirname "$0")/../.." && pwd)
 mode=check
 core=""
+profile=${2:-rc2}
 if [ "${1:-}" = "--list-files" ]; then
     mode=list
 elif [ -n "${1:-}" ]; then
     core=$1
 fi
+case "$profile" in rc2|dev-1166) ;; *) echo "check-net-boundary: unknown profile: $profile" >&2; exit 2 ;; esac
 if [ "$mode" = check ] && [ -z "$core" ]; then
     echo "usage: sh server/tools/check-net-boundary.sh <extracted sco-core source kit> | --list-files" >&2
     exit 2
@@ -87,6 +90,19 @@ file_pin() {   # <file> <git blob id of the file when it was checked>
     [ "$now" = "$2" ] && return 0
     fail "a file of sco-core that the boundary relies on has changed: $1
       its blob id is now ${now:-unknown (is git installed?)}, the boundary was checked against $2."
+}
+
+# The generated compatibility descriptor is byte-pinned, not just searched for
+# a source string: a claimed source cannot select or relax the reviewed file set.
+metadata_pin() { # <expected git blob id>
+    if [ "$mode" = list ]; then echo COMPATIBILITY.json; return 0; fi
+    files=$((files + 1))
+    if [ ! -f "$core/COMPATIBILITY.json" ]; then
+        fail "sco-core's COMPATIBILITY.json is gone. The boundary reads it."
+        return 0
+    fi
+    now=$(git hash-object --stdin < "$core/COMPATIBILITY.json")
+    [ "$now" = "$1" ] || fail "sco-core COMPATIBILITY.json does not match the $profile reviewed source metadata"
 }
 
 if [ "$mode" = check ] && [ ! -f "$core/include/sco/net/core.h" ]; then
@@ -240,16 +256,30 @@ behaviour $udp_cpp 'a datagram longer than the buffer is reported as one byte to
 # under the library's core and its wire), so a change in them is noticed the same way. The fifth is the kit's
 # tests/net_mem.h, the in-memory network that test_server includes (the program never does).
 
+if [ "$profile" = dev-1166 ]; then
+    # Provisional kit produced from core 1166c9f12d7327dd50a58b1d9261e7d6cc21bef6.
+    metadata=852cb697aad91239480b87103a34e68b42fe63cc
+    udp_header=a61e895e059f864a7d84231fb00eb654d5a2e7b2
+    udp_posix=86244e35725136ec0ecfdf432ed7c891f6356591
+    udp_windows=9ebdbff02d1f74d638599dfd2b04daff72f780fa
+else
+    metadata=4cdc9e4df1b03f0c8aa19075b67bfd69f5563d9e
+    udp_header=15d4bd57f5f3be2246be16d3d7ddb8da62c19675
+    udp_posix=62402b44d666a6e1a5d7a79adce5c76d2fa3be22
+    udp_windows=69df8298fd693f34686176293f34db5562c3a422
+fi
+metadata_pin "$metadata"
 file_pin include/sc_net.h 452014ac6fbbc754c6a052cb3779c3d0df5e7b47
 file_pin include/sco/net/core.h 0928dfdeb502dd4086efc74bc82ebb26a82704fb
 file_pin include/sco/net/scope.h 650b1df56628c1ffeb99c9a84221e28d2164cd3a
 file_pin include/sco/net/transport.h 9ad67f517234f28fb99e44c8cf367a5ccb700542
-file_pin include/sco/net/udp.h 15d4bd57f5f3be2246be16d3d7ddb8da62c19675
+file_pin include/sco/net/udp.h "$udp_header"
 file_pin include/sco/net/wire.h 26e1ea011d6b131238a186e4fc0b33dbb69c03a0
 file_pin src/net/core.cpp 540ead2f58c2e49519e8c27b9918fabcecc1eba5
 file_pin src/net/scope.cpp de7f0c50ca8178135363f4f049ba751a17de3382
 file_pin src/net/wire.cpp 317f2d63a8e7981f0399155918e67b0bccd9a0b6
-file_pin src/net/udp_posix.cpp 62402b44d666a6e1a5d7a79adce5c76d2fa3be22
+file_pin src/net/udp_posix.cpp "$udp_posix"
+file_pin src/net/udp_win.cpp "$udp_windows"
 file_pin include/sco/net/reliable.h 1ed5158157831585a24c296d09519bea5697699a
 file_pin include/sco/net/sha2.h 9f68ac185abaf685ef10c29faf6d0e549ccf4cbc
 file_pin src/net/reliable.cpp 831e75bfc2d56e24c9051008b770a3d245a122a2
@@ -264,4 +294,4 @@ if [ "$fails" -ne 0 ]; then
     exit 1
 fi
 kit_version=$(cat "$core/sdk/VERSION" 2> /dev/null || echo unknown)
-echo "check-net-boundary: ok. $pins declarations, constants and lines of behaviour found, $files files unchanged since they were checked (sco-core source kit $kit_version)."
+echo "check-net-boundary: ok. $pins declarations, constants and lines of behaviour found, $files files unchanged since they were checked (sco-core source kit $kit_version, $profile)."

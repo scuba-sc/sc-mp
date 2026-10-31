@@ -39,6 +39,8 @@ copy_sources() {
     mkdir -p "$copy_root/cmake" "$copy_root/plugins/multiplayer"
     cp -R "$root/server" "$copy_root/server"
     cp "$root/cmake/ScoCoreSource.cmake" "$copy_root/cmake/ScoCoreSource.cmake"
+    cp "$root/cmake/ScoSdk.cmake" "$copy_root/cmake/ScoSdk.cmake"
+    cp "$root/cmake/VerifyExtractedKit.cmake" "$copy_root/cmake/VerifyExtractedKit.cmake"
     cp "$root/plugins/multiplayer/relay_wire.h" "$copy_root/plugins/multiplayer/relay_wire.h"
 }
 
@@ -56,6 +58,20 @@ if ! grep -Fq 'approved system header' "$work/allowed.log"; then
     exit 1
 fi
 echo "ok: accepted the conditional Windows SDK headers"
+
+# The newly shared CMake verification module is part of the scanned production set.
+copy_sources
+printf '\n# multiplayer_wire\n' >> "$copy_root/cmake/VerifyExtractedKit.cmake"
+if sh "$checker" "$copy_root" "$facts" > "$work/cmake-module.log" 2>&1; then
+    echo "relay_no_game_code_checks: accepted a forbidden reference in the shared verifier" >&2
+    exit 1
+fi
+if ! grep -Fq "plugin's own wire header" "$work/cmake-module.log"; then
+    cat "$work/cmake-module.log" >&2
+    echo "relay_no_game_code_checks: rejected the shared verifier for an unexpected reason" >&2
+    exit 1
+fi
+echo "ok: rejected a forbidden reference in the shared CMake verifier"
 
 # A similarly named Windows SDK header is not implicitly approved by the exact header exceptions.
 copy_sources
