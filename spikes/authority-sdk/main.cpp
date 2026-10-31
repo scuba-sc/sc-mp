@@ -2,6 +2,7 @@
 #include "bounded_mem.h"
 #include "receipt_fixture.h"
 namespace nettest = boundedtest;
+#include <algorithm>
 #include <stdexcept>
 #include <cstdio>
 #include <string>

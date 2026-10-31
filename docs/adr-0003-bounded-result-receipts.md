@@ -28,3 +28,7 @@ cmake -S sc-mp/spikes/authority-sdk -B build -DSDK_ROOT=<LOCAL_HOME>/.hermes/cac
 cmake --build build --target authority-cli receipt-tests receipt-integration medium-tests -j4
 ctest --test-dir build -V
 ```
+
+## Follow-up scope and concurrency
+
+The receipt authority now allocates process-local incarnations atomically and cannot be copied or moved with a duplicate incarnation. Its other methods and state remain single-threaded: callers must serialize admission, execution, and disconnect. A known disconnected peer retains its earlier receipts and high-water mark but cannot admit new IDs. The fixture still relies on the SDK to reject messages from peers after they leave; a disconnect for a peer with no previously admitted command does not allocate a tombstone. These changes do not establish durable identity, entity ownership, real process topologies, or game authority.

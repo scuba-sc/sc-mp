@@ -74,6 +74,10 @@ elif name == 'cmake':
         out.parent.mkdir(parents=True)
         out.write_text('fake relay binary\n')
         out.chmod(0o755)
+        if data.get('config_symlink_after_build'):
+            config = base / 'etc/sco-relay/sco-relay.conf'
+            config.unlink()
+            config.symlink_to(base / 'unrelated-file')
         data.update(data.get('after_build', {}))
         save()
 elif name == 'nproc': print('2')
@@ -299,6 +303,31 @@ class FullInstaller(IdentitySandbox):
         self.assertIn('unsafe config path', result.stderr)
         self.assertFalse(self.log.exists())
         self.assertEqual(target.read_text(), 'must stay untouched')
+
+    def test_dangling_config_directory_symlink_refused(self):
+        (self.base / 'etc/sco-relay').symlink_to(self.base / 'missing')
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('unsafe config path', result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_post_build_config_symlink_refused_before_chown_or_chmod(self):
+        directory = self.base / 'etc/sco-relay'
+        directory.mkdir()
+        (directory / 'sco-relay.conf').write_text('original config')
+        target = self.base / 'unrelated-file'
+        target.write_text('must stay untouched')
+        target.chmod(0o600)
+        self.data['config_symlink_after_build'] = True
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('unsafe config path', result.stderr)
+        self.assertIn('cmake --build', self.log.read_text())
+        self.assertNotIn('install ', self.log.read_text())
+        self.assertNotIn('chown ', self.log.read_text())
+        self.assertNotIn('chmod ', self.log.read_text())
+        self.assertEqual(target.read_text(), 'must stay untouched')
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
 
     def test_provider_records_refused_before_build(self):
         userdb = self.base / 'etc/userdb'

@@ -1,6 +1,10 @@
 #include "receipt_protocol.h"
 #include <stdexcept>
 #include <cstdio>
+#include <thread>
+#include <mutex>
+#include <set>
+#include <type_traits>
 #define CHECK(x) do { if(!(x)) throw std::runtime_error(#x); } while(0)
 int main(){try{
  receipt::Authority a;
@@ -13,5 +17,7 @@ int main(){try{
  {receipt::Authority b;CHECK(b.admit(2,{b.epoch,2,1}).status==receipt::Status::Gap);CHECK(b.admit(2,{b.epoch,1,101}).status==receipt::Status::Queued);b.step();CHECK(b.admit(2,{b.epoch,1,101}).status==receipt::Status::Invalid);CHECK(b.admit(2,{b.epoch,1,1}).status==receipt::Status::Conflict);CHECK(b.value==0);CHECK(b.admit(2,{b.epoch+1,2,1}).status==receipt::Status::Stale);CHECK(b.admit(3,{b.epoch,1,1}).status==receipt::Status::Queued);b.disconnect(3);CHECK(b.admit(3,{b.epoch,1,1}).status==receipt::Status::Disconnected);b.step();CHECK(b.value==0);std::puts("PASS permanent rejection conflict gap session scope disconnect");}
  {receipt::Authority b;for(uint64_t p=1;p<=16;++p)CHECK(b.admit(p,{b.epoch,2,1}).status==receipt::Status::Gap);CHECK(b.peers.empty());CHECK(b.admit(17,{b.epoch,1,1}).status==receipt::Status::Queued);std::puts("PASS gap refusals do not allocate peer tombstones");}
  {receipt::Authority b;for(uint64_t id=1;id<=16;++id)CHECK(b.admit(1,{b.epoch,id,1}).status==receipt::Status::Queued);for(uint64_t p=2;p<=17;++p)CHECK(b.admit(p,{b.epoch,1,1}).status==receipt::Status::Overload);CHECK(b.peers.size()==1);b.step();CHECK(b.admit(18,{b.epoch,1,1}).status==receipt::Status::Queued);std::puts("PASS queue refusals do not allocate peer tombstones");}
+ {receipt::Authority b;CHECK(b.admit(2,{b.epoch,1,3}).status==receipt::Status::Queued);b.disconnect(2);CHECK(b.admit(2,{b.epoch,2,3}).status==receipt::Status::Disconnected);CHECK(b.admit(2,{b.epoch,1,3}).status==receipt::Status::Disconnected);CHECK(b.pending.empty());b.step();CHECK(b.value==0);std::puts("PASS disconnected peer cannot submit new commands");}
+ {static_assert(!std::is_copy_constructible_v<receipt::Authority>);static_assert(!std::is_move_constructible_v<receipt::Authority>);std::mutex mu;std::set<uint64_t> epochs;std::vector<std::thread> threads;for(int t=0;t<8;++t)threads.emplace_back([&]{for(int i=0;i<1000;++i){receipt::Authority b;std::lock_guard<std::mutex> lock(mu);epochs.insert(b.epoch);}});for(auto& thread:threads)thread.join();CHECK(epochs.size()==8000);std::puts("PASS concurrent incarnation allocation is unique");}
  return 0;
 }catch(const std::exception&e){std::fprintf(stderr,"FAIL %s\n",e.what());return 1;}}

@@ -45,6 +45,8 @@ ctest --test-dir build -C Release --output-on-failure
 `ctest` runs the module workflow test (`tools/multiplayer_workflow_test.cpp`, synthetic services, no sockets,
 no game) and, on Windows, the SDK's `sco-plugin-check` on the plugin folder. With the default
 `SC_MP_BUILD_RELAY=ON`, Windows and Linux also build the relay server and run its five tests (below).
+On Linux, use the `Unix Makefiles` generator for the full suite: the relay's no-game-code checks inspect
+the actual link line in `link.txt`, which Ninja does not generate.
 For an offline Windows or Linux build, put the release assets in a directory and pass
 `-DSCO_SDK_ARCHIVE_DIR=<dir>`; the hash is still checked. The directory needs both
 `sco-sdk-<version>.zip` and `sco-sdk-core-source-<version>.zip` (the relay's kit), or pass

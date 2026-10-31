@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -11,10 +12,21 @@ struct Command {uint64_t epoch, id; int32_t delta;};
 struct Result {uint64_t peer, epoch, id; Status status; int32_t value;};
 struct Authority {
  static constexpr size_t queueLimit=16, receiptLimit=8, peerLimit=16;
- static uint64_t incarnation(){static uint64_t n=0;if(n==UINT64_MAX)throw std::runtime_error("epoch exhausted");return ++n;}
+ static uint64_t incarnation(){
+  static std::atomic<uint64_t> n{0};
+  uint64_t previous=n.load(std::memory_order_relaxed);
+  do { if(previous==UINT64_MAX)throw std::runtime_error("epoch exhausted"); }
+  while(!n.compare_exchange_weak(previous,previous+1,std::memory_order_relaxed));
+  return previous+1;
+ }
+ Authority()=default;
+ Authority(const Authority&)=delete;
+ Authority& operator=(const Authority&)=delete;
+ Authority(Authority&&)=delete;
+ Authority& operator=(Authority&&)=delete;
  uint64_t epoch=incarnation(); int value=0;
  struct Entry {Command command;Result result;};
- struct Peer {uint64_t high=0;std::deque<Entry> receipts;};
+ struct Peer {uint64_t high=0;bool disconnected=false;std::deque<Entry> receipts;};
  struct Pending {uint64_t peer;Command command;};
  std::map<uint64_t,Peer> peers;
  std::deque<Pending> pending;
@@ -32,6 +44,7 @@ struct Authority {
   for(auto& e:p.receipts)if(e.command.id==c.id)return e.command.delta==c.delta?e.result:result(Status::Conflict);
   for(auto& q:pending)if(q.peer==peer&&q.command.id==c.id)return result(q.command.delta==c.delta?Status::Queued:Status::Conflict);
   if(c.id<=p.high)return result(Status::Old);
+  if(p.disconnected)return result(Status::Disconnected);
   if(p.high==UINT64_MAX || c.id!=p.high+1)return result(Status::Gap);
   if(pending.size()==queueLimit)return result(Status::Overload);
   p.high=c.id;
@@ -49,6 +62,8 @@ struct Authority {
  }
  void disconnect(uint64_t peer){
   // Keep the high-water tombstone for this incarnation: never reopen evicted command IDs.
+  auto peerIt=peers.find(peer);
+  if(peerIt!=peers.end())peerIt->second.disconnected=true;
   for(auto i=pending.begin();i!=pending.end();)if(i->peer==peer){auto& p=peers.at(peer);p.receipts.push_back({i->command,{peer,epoch,i->command.id,Status::Disconnected,value}});if(p.receipts.size()>receiptLimit)p.receipts.pop_front();i=pending.erase(i);}else ++i;
  }
 };
