@@ -69,7 +69,7 @@ python3 tools/verify_dev_sdk.py --archive-dir "$ARCHIVES" --version "$VERSION" \
   --source-commit "$CORE_COMMIT" --sdk-sha256 "$SDK_SHA256" --core-source-sha256 "$SOURCE_SHA256" &&
 cmake -S . -B build-dev -G 'Unix Makefiles' -DSCO_SDK_ARCHIVE_DIR="$ARCHIVES" \
   -DSCO_SDK_VERSION="$VERSION" -DSCO_SDK_SHA256="$SDK_SHA256" \
-  -DSCO_CORE_SOURCE_SHA256="$SOURCE_SHA256" -DSC_MP_NET_BOUNDARY_PROFILE=dev-1166 &&
+  -DSCO_CORE_SOURCE_SHA256="$SOURCE_SHA256" -DSC_MP_NET_BOUNDARY_PROFILE=dev-571 &&
 cmake --build build-dev &&
 ctest --test-dir build-dev --output-on-failure
 ```
@@ -77,10 +77,13 @@ ctest --test-dir build-dev --output-on-failure
 The CMake build checks the supplied hashes again. Use a fresh build directory and record the exact source and
 archive hashes with results. The relay boundary checks deliberately pin reviewed SDK source files: when a new
 kit changes one, review the difference before updating those checks, and do not bypass a failure. The provisional
-`dev-1166` profile accepts only the exact pair described in the
+`dev-571` profile accepts only the exact pair described in the
 [network boundary review](docs/handoff/2026-10-31-network-boundary-review.md); a new source and its artifacts require
 a new review and pins. Published SDK pins remain the default until a separately reviewed change updates them.
 Development input results are not release, Windows, LAN or game evidence.
+The hosted Linux job builds and tests the `dev-571` pair from that exact source;
+the hosted Windows job currently tests the published RC2 pair. Windows testing
+against the coordinated development source is still outstanding.
 
 ## Relay support
 

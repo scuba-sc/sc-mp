@@ -176,7 +176,7 @@ keep stable. So the server touches the library in one place only.
   or includes (16 network files, line endings ignored, including both platforms' UDP implementations and
   `tests/net_mem.h`, which only `test_server` includes), plus the kit's exact compatibility metadata.
   The `static_assert`s in `server/net_boundary.cpp` say the same at build time. The default `rc2` profile and
-  the provisional `dev-1166` profile each require a whole reviewed set, not a mixture. See the
+  the provisional `dev-571` profile each require a whole reviewed set, not a mixture. See the
   [network boundary review](../docs/handoff/2026-10-31-network-boundary-review.md) for the provisional inputs
   and their limitations.
 - `server/tests/test_net_boundary_checks.sh` (the test `net_boundary_checks`) proves that those checks fire, on altered

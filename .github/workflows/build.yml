@@ -14,33 +14,84 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Builds the multiplayer plugin against the PUBLISHED sco-core SDK archive. cmake/ScoSdk.cmake downloads
-# sco-sdk-<version>.zip and refuses to build unless its SHA-256 matches the pin in that file.
-# Nothing here reads a sibling sco-core checkout. A green run is a build and a synthetic test only:
-# it is not "verified in game" (nothing has been run in game).
+# Ubuntu packages the coordinated core source and validates the exact development
+# archive pair locally. Windows uses the published RC2 pair; its result does not
+# validate the newer core. Both jobs run synthetic tests, not game acceptance.
+env:
+  CORE_DEVELOPMENT_SHA: 571fe8e2c911d7c63c372103724896feaabe58f2
+  DEVELOPMENT_SDK_SHA256: 67f4f837879867ac6d953a2953c448ce7913a9da924d6e04931a48988f23b9c1
+  DEVELOPMENT_SOURCE_SHA256: 35242e00989de3afd61f24a7a67dfd4958c3331222bea9e121f952452477d1ab
+
 jobs:
   build:
+    name: ${{ matrix.label }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-2022
             config: Release
+            label: Windows / published RC2
+            development: false
           - os: ubuntu-24.04
             config: Release
+            label: Linux / coordinated core
+            development: true
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Configure (downloads and verifies the SDK archive)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+      - name: Check out coordinated core source
+        if: matrix.development
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: scuba-sc/sco-core
+          ref: ${{ env.CORE_DEVELOPMENT_SHA }}
+          path: .ci-core-input
+          persist-credentials: false
+
+      - name: Build and verify coordinated development archives
+        if: matrix.development
+        shell: bash
+        run: |
+          set -eu
+          core="$RUNNER_TEMP/sc-mp-core-source"
+          archives="$RUNNER_TEMP/sc-mp-development-sdk"
+          test ! -e "$core"
+          test ! -e "$archives"
+          mv "$GITHUB_WORKSPACE/.ci-core-input" "$core"
+          test "$(git -C "$core" rev-parse HEAD)" = "$CORE_DEVELOPMENT_SHA"
+          test -z "$(git -C "$core" status --porcelain=v1 --untracked-files=all)"
+          mkdir "$archives"
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 "$core/sdk/package.py" --profile legacy --out "$archives"
+          python3 "$core/sdk/package.py" --profile core-source --out "$archives"
+          test -z "$(git -C "$core" status --porcelain=v1 --untracked-files=all)"
+          python3 tools/verify_dev_sdk.py --archive-dir "$archives" --version 2.4.0 \
+            --source-commit "$CORE_DEVELOPMENT_SHA" --sdk-sha256 "$DEVELOPMENT_SDK_SHA256" \
+            --core-source-sha256 "$DEVELOPMENT_SOURCE_SHA256"
+
+      - name: Configure Linux with coordinated development archives
+        if: matrix.development
+        shell: bash
+        run: |
+          cmake -S . -B build -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=${{ matrix.config }} \
+            -DSCO_SDK_ARCHIVE_DIR="$RUNNER_TEMP/sc-mp-development-sdk" \
+            -DSCO_SDK_SHA256="$DEVELOPMENT_SDK_SHA256" -DSCO_CORE_SOURCE_SHA256="$DEVELOPMENT_SOURCE_SHA256" \
+            -DSC_MP_NET_BOUNDARY_PROFILE=dev-571
+
+      - name: Configure Windows with published RC2
+        if: ${{ !matrix.development }}
+        run: >-
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DSC_MP_NET_BOUNDARY_PROFILE=rc2
+          -DSCO_SDK_VERSION=2.4.0 -DSCO_SDK_RELEASE_TAG=sdk-v2.4.0-rc.2
+          -DSCO_SDK_SHA256=51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e
+          -DSCO_CORE_SOURCE_SHA256=ddd1d75055f6b0efd69af4ac2eff6a18a5ff177f87cb28c938af3a625befbbb8
 
       - name: Build
         run: cmake --build build --config ${{ matrix.config }}
 
-      # multiplayer-module-workflow: 81 synthetic-service checks of the module.
-      # multiplayer-plugin-check (Windows only): the published sco-plugin-check on the plugin folder.
-      - name: Test (workflow test + sco-plugin-check)
+      - name: Run synthetic tests
         run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure

@@ -20,8 +20,8 @@
 # change server/net_boundary.cpp if the change needs it, then update the lines and blob ids below in the same
 # commit that moves the pin.
 #
-# Usage: sh server/tools/check-net-boundary.sh <kit-dir> [rc2|dev-1166]
-#        rc2 is the default; dev-1166 is a provisional, separately reviewed file set.
+# Usage: sh server/tools/check-net-boundary.sh <kit-dir> [rc2|dev-571]
+#        rc2 is the default; dev-571 is a provisional, separately reviewed file set.
 #        sh server/tools/check-net-boundary.sh --list-files  prints the files the checks read, one per line
 # CMake runs it through server/tests/test_net_boundary_checks.sh, which also runs it on altered copies to prove
 # it fails when it should.
@@ -36,7 +36,7 @@ if [ "${1:-}" = "--list-files" ]; then
 elif [ -n "${1:-}" ]; then
     core=$1
 fi
-case "$profile" in rc2|dev-1166) ;; *) echo "check-net-boundary: unknown profile: $profile" >&2; exit 2 ;; esac
+case "$profile" in rc2|dev-571) ;; *) echo "check-net-boundary: unknown profile: $profile" >&2; exit 2 ;; esac
 if [ "$mode" = check ] && [ -z "$core" ]; then
     echo "usage: sh server/tools/check-net-boundary.sh <extracted sco-core source kit> | --list-files" >&2
     exit 2
@@ -256,9 +256,9 @@ behaviour $udp_cpp 'a datagram longer than the buffer is reported as one byte to
 # under the library's core and its wire), so a change in them is noticed the same way. The fifth is the kit's
 # tests/net_mem.h, the in-memory network that test_server includes (the program never does).
 
-if [ "$profile" = dev-1166 ]; then
-    # Provisional kit produced from core 1166c9f12d7327dd50a58b1d9261e7d6cc21bef6.
-    metadata=852cb697aad91239480b87103a34e68b42fe63cc
+if [ "$profile" = dev-571 ]; then
+    # Provisional kit produced from core 571fe8e2c911d7c63c372103724896feaabe58f2.
+    metadata=bb621f60c6d13cf269a45da92eb1d9dd966b05fc
     udp_header=a61e895e059f864a7d84231fb00eb654d5a2e7b2
     udp_posix=86244e35725136ec0ecfdf432ed7c891f6356591
     udp_windows=9ebdbff02d1f74d638599dfd2b04daff72f780fa
