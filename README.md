@@ -45,6 +45,8 @@ ctest --test-dir build -C Release --output-on-failure
 `ctest` runs the module workflow test (`tools/multiplayer_workflow_test.cpp`, synthetic services, no sockets,
 no game) and, on Windows, the SDK's `sco-plugin-check` on the plugin folder. With the default
 `SC_MP_BUILD_RELAY=ON`, Windows and Linux also build the relay server and run its five tests (below).
+On Linux, use the `Unix Makefiles` generator for the full suite: the relay's no-game-code checks inspect
+the actual link line in `link.txt`, which Ninja does not generate.
 For an offline Windows or Linux build, put the release assets in a directory and pass
 `-DSCO_SDK_ARCHIVE_DIR=<dir>`; the hash is still checked. The directory needs both
 `sco-sdk-<version>.zip` and `sco-sdk-core-source-<version>.zip` (the relay's kit), or pass
@@ -53,6 +55,35 @@ For an offline Windows or Linux build, put the release assets in a directory and
 change `SCO_SDK_VERSION`, `SCO_SDK_RELEASE_TAG` and `SCO_SDK_SHA256` together (from the release `SHA256SUMS`), and
 `SCO_CORE_SOURCE_SHA256` in `cmake/ScoCoreSource.cmake` with them. A green build is
 not "verified in game": nothing here has been run in game, and nothing new in SDK 2.4.0 has been run in game either.
+
+### Coordinated development SDK inputs
+
+For local cross-repository testing, obtain both archives and their expected SHA-256 hashes from the core
+integration owner, together with the full coordinated core commit and SDK version. Verify the pair before
+configuring. The verifier checks both hashes, archive profiles, SDK and ABI versions, and the core commit in
+each archive's compatibility metadata. This checks consistency against the supplied values; it does not
+authenticate their source or turn a development artifact into a published SDK.
+
+```sh
+python3 tools/verify_dev_sdk.py --archive-dir "$ARCHIVES" --version "$VERSION" \
+  --source-commit "$CORE_COMMIT" --sdk-sha256 "$SDK_SHA256" --core-source-sha256 "$SOURCE_SHA256" &&
+cmake -S . -B build-dev -G 'Unix Makefiles' -DSCO_SDK_ARCHIVE_DIR="$ARCHIVES" \
+  -DSCO_SDK_VERSION="$VERSION" -DSCO_SDK_SHA256="$SDK_SHA256" \
+  -DSCO_CORE_SOURCE_SHA256="$SOURCE_SHA256" -DSC_MP_NET_BOUNDARY_PROFILE=dev-1b &&
+cmake --build build-dev &&
+ctest --test-dir build-dev --output-on-failure
+```
+
+The CMake build checks the supplied hashes again. Use a fresh build directory and record the exact source and
+archive hashes with results. The relay boundary checks deliberately pin reviewed SDK source files: when a new
+kit changes one, review the difference before updating those checks, and do not bypass a failure. The provisional
+`dev-1b` profile accepts only the exact pair described in the
+[network boundary review](docs/handoff/2026-10-31-network-boundary-review.md); a new source and its artifacts require
+a new review and pins. Published SDK pins remain the default until a separately reviewed change updates them.
+Development input results are not release, Windows, LAN or game evidence.
+The hosted Linux and Windows development jobs build and test the `dev-1b`
+pair from that exact source. A separate hosted Windows job tests the published
+RC2 pair. Check each job's result for its actual platform evidence.
 
 ## Relay support
 
@@ -68,6 +99,14 @@ Background: [docs/relay-roadmap.md](docs/relay-roadmap.md). Not run in game.
 
 Current single-player, listen-host, relay-only, and future authoritative-server boundaries are
 summarized in [docs/session-modes.md](docs/session-modes.md).
+
+## Text chat
+
+Players in a session can send each other short lines of text from the plugin's panel, in a session a player hosts and
+through a relay server alike. It is plain text and **not encrypted** (use a VPN, as for the rest of the traffic), and
+a player on a plugin build without it never sees it. It adds one channel, `multiplayer.chat`, and leaves protocol
+generation 2 unchanged, so the relay is the same program. **Not run in game**: only synthetic tests have run, and
+how it looks in game is left to testers. Rules and limits: [plugins/multiplayer/README.md](plugins/multiplayer/README.md#text-chat).
 
 ## Licence
 

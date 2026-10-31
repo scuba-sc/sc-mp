@@ -1,13 +1,19 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# The server's tests, four of them, all registered with CTest so that `ctest` runs them with the rest of sc-mp:
+# The server's tests, five of them, all registered with CTest so that `ctest` runs them with the rest of sc-mp:
 #   test_server          the unit tests (config, address rule, wire bytes, roster, nearby-only forwarding, session,
 #                        run loop, real UDP on loopback)
 #   sco_relay_program    runs the real program and checks its exit status
 #   net_boundary_checks  proves the sco-core boundary checks fire when they should: it compiles a header on its own
 #                        and alters copies of the kit's files
-#   relay_no_game_code   proves the server holds no game code and touches the kit's network library in one file
-#   relay_no_game_code_checks proves the source gate accepts the guarded Windows SDK headers and rejects other
-#                           Windows headers and paths that climb out of the server folder
+#   relay_no_game_code   proves the server holds no game code and touches the kit's network library in one file; it
+#                        reads the program's real link line from link.txt, which only the Makefile generators write,
+#                        so with Ninja or any generator that writes none it fails instead of skipping that part
+#   relay_no_game_code_checks proves the gate has no way round it: it accepts the guarded Windows SDK headers and
+#                           rejects other Windows headers, paths that climb out of the server folder, headers from a
+#                           folder below server/ (server/tests), includes behind a comment, a line splice or the %:
+#                           digraph, a library hidden in a -Wl, list or an @response file on the link line, and a
+#                           missing link.txt (one case per hole, printing ok: or FAIL: H1 to H5), and that an include
+#                           inside a comment is still accepted
 # Linux only, like the server.
 
 add_executable(test_server
@@ -40,21 +46,40 @@ if(WIN32)
   set_tests_properties(sco_relay_windows_process PROPERTIES TIMEOUT 60)
 endif()
 if(NOT WIN32)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME relay_install_identity
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_install_identity.py")
+  set_tests_properties(relay_install_identity PROPERTIES TIMEOUT 120)
+  add_test(NAME relay_install_full
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_install_full.py")
+  set_tests_properties(relay_install_full PROPERTIES TIMEOUT 180)
+  add_test(NAME relay_install_source
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_install_source.py")
+  set_tests_properties(relay_install_source PROPERTIES TIMEOUT 120)
+  add_test(NAME relay_boundary_config
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_boundary_config.py"
+            "${SCO_RELAY_ROOT}" "${CMAKE_COMMAND}" "${CMAKE_BINARY_DIR}/_sdk"
+            "${SC_MP_NET_BOUNDARY_PROFILE}" "${SCO_SDK_SHA256}" "${SCO_CORE_SOURCE_SHA256}")
+  set_tests_properties(relay_boundary_config PROPERTIES TIMEOUT 600)
+endif()
 add_test(NAME sco_relay_program
   COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/test_program.sh" "$<TARGET_FILE:sco-relay>")
 set_tests_properties(sco_relay_program PROPERTIES TIMEOUT 300)
 
 # The compiler is the one this build uses, so the header test and the compile-time checks see what the build sees.
+set(SC_MP_NET_OTHER_KIT_FOR_TESTS "" CACHE PATH "Optional other reviewed kit for mixed-source negative tests")
 add_test(NAME net_boundary_checks
   COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/test_net_boundary_checks.sh"
-          "${SCO_RELAY_ROOT}" "${SCO_CORE_SOURCE_ROOT}" "${CMAKE_CXX_COMPILER}")
+          "${SCO_RELAY_ROOT}" "${SCO_CORE_SOURCE_ROOT}" "${CMAKE_CXX_COMPILER}"
+          "${SC_MP_NET_BOUNDARY_PROFILE}" "${SC_MP_NET_OTHER_KIT_FOR_TESTS}")
 set_tests_properties(net_boundary_checks PROPERTIES TIMEOUT 600)
 
 # What the build looks like, written when CMake generates, for server/tools/check-no-game-code.sh: where the
 # libraries and the program are, what each links and passes on to what links it (INTERFACE_LINK_LIBRARIES, which
-# reaches the program's link line through the target that lists it), the file that holds the program's link line
-# where the generator writes one, and the kit's folder. The script reads these, so most of it works with any CMake
-# generator; the real link line is read only where there is a file for it (Makefile generators).
+# reaches the program's link line through the target that lists it), the file that holds the program's link line,
+# and the kit's folder. The script reads these. The real link line is required: it is read from that file, which only
+# the Makefile generators write, so a build without it (Ninja, for one) fails relay_no_game_code, it does not skip it.
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/relay-build-facts.txt" CONTENT
 "cache=${CMAKE_BINARY_DIR}/CMakeCache.txt
 kit=${SCO_CORE_SOURCE_ROOT}

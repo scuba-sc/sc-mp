@@ -34,6 +34,13 @@ endif()
 if(SC_MP_BUILD_TESTS)
   enable_testing()
   set(SCO_WORKFLOW_TESTS ON)
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME sc_mp_dev_sdk_verifier
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/tools/test_verify_dev_sdk.py")
+  else()
+    message(STATUS "sc-mp: Python not found; development SDK verifier test unavailable")
+  endif()
 endif()
 
 add_subdirectory(plugins/multiplayer)
