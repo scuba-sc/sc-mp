@@ -110,13 +110,13 @@ python3 spikes/host-context/qualify.py --core-archive /path/to/sco-sdk-core-sour
 ```
 
 Use a different fresh output directory with `--sanitize` for Debug ASan/UBSan,
-leak detection enabled and UBSan failures fatal. The qualifier snapshots the six
-adapter files, both verifier files and the negative-control test source, checks
-their hashes, runs the verifier tests, and verifies the archive and extracted
-inventory before building. It records tool versions, commands, exit codes,
-source/log/binary hashes and JUnit output in `receipt.json` and neighboring logs.
-It refuses existing output directories and retains failures. It performs no
-downloads or publication; its source hashes also identify an unpacked snapshot
+leak detection enabled and UBSan failures fatal. The Linux qualifier snapshots
+the six adapter files, both verifier files and the negative-control test source,
+checks their hashes, runs all 21 verifier tests, and verifies the archive and
+extracted inventory before building. It records tool versions, commands, exit
+codes, source/log/binary hashes and JUnit output in `receipt.json` and neighboring
+logs. It refuses existing output directories and retains failures. It performs
+no downloads or publication; its source hashes also identify an unpacked snapshot
 without Git metadata. Generated qualification files are evidence, not a release.
 
 The verifier checks the regular-file inventory and content, rejects `..` root
@@ -126,9 +126,13 @@ allowed. The qualifier checks archive entry type and path consistency before
 extraction; see [the verifier tests](../../tests/host-context/README.md) for
 exact bounds and metadata coverage. Qualification assumes private, stable
 output and inputs; it does not defend against hostile concurrent tree mutation
-or establish artifact origin. Qualification currently targets Linux/POSIX; all
-21 verifier tests must execute without skips, including FIFO and symlink cases.
-The newly written verifier and tests were informed
+or establish artifact origin. The full verifier suite targets Linux/POSIX; all
+21 tests must execute without skips, including FIFO and symlink cases. A separate
+Windows MSVC x64 Release job checks the same pinned archive and extracted
+inventory, then runs all 11 adapter lifecycle CTests without skipping scenarios.
+It does not run the POSIX-specific malformed-tree cases or sanitizers. The
+fixture remains synthetic and does not establish native-provider, runtime, or
+game support. The newly written verifier and tests were informed
 by the earlier `cmake/VerifyExtractedKit.cmake` from commit
 `86b8169095b3dea703dbf281b4596cf4a1e92c89` and the previous qualifier; this is
 neither a clean-room claim nor a determination of underlying contribution rights.

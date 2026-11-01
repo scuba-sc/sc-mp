@@ -55,3 +55,72 @@ jobs:
             fi
             cat "$evidence/$mode/verifier-tests.log" "$evidence/$mode/ctest.log" "$evidence/$mode/receipt.json"
           done
+
+      - name: Upload exact core-source archive for Windows fixture
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: host-context-core-source-f76
+          path: ${{ runner.temp }}/host-context/archives/sco-sdk-core-source-2.4.0.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  synthetic-windows:
+    needs: synthetic-linux
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Check out sc-mp
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Download exact core-source archive from this run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: host-context-core-source-f76
+          path: host-context-artifact
+
+      - name: Check exact f76 archive and extracted inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$GITHUB_WORKSPACE/host-context-artifact/sco-sdk-core-source-2.4.0.zip"
+          extract="$RUNNER_TEMP/host-context-kit"
+          python - "$archive" <<'PY'
+          import hashlib
+          import pathlib
+          import sys
+          actual = hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest()
+          expected = "d9a329fadf6baa2409eafda3e3756c0c2f0b493534e335b5253e765bf78ede0c"
+          if actual != expected:
+              raise SystemExit(f"core-source archive hash mismatch: {actual}")
+          print("core-source archive hash verified")
+          PY
+          mkdir -p "$extract"
+          python -m zipfile -e "$archive" "$extract"
+          python cmake/verify_host_context_kit.py \
+            "$extract/sco-sdk-core-source-2.4.0" \
+            4d07c4ef6190f4ab7daca05ae36c66a28788579c458fba97c85b1de0710e7ea3
+
+      - name: Configure Windows Release fixture (MSVC x64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S spikes/host-context -B "$RUNNER_TEMP/host-context-windows" -A x64 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSDK_ROOT="$RUNNER_TEMP/host-context-kit/sco-sdk-core-source-2.4.0"
+
+      - name: Build Windows Release fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build "$RUNNER_TEMP/host-context-windows" --config Release \
+            --target host-context --parallel 2
+
+      - name: Run all adapter lifecycle cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir "$RUNNER_TEMP/host-context-windows" -C Release \
+            --output-on-failure --no-tests=error
