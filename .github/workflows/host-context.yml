@@ -3,6 +3,12 @@ name: host-context
 on:
   pull_request:
     branches: [main]
+    paths:
+      - '.github/workflows/host-context.yml'
+      - 'spikes/host-context/**'
+      - 'cmake/VerifyExtractedKit.cmake'
+      - 'cmake/verify_host_context_kit.py'
+      - 'tests/host-context/**'
   workflow_dispatch:
 
 permissions:
