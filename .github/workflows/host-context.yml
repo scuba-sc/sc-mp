@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: scuba-sc/sco-core
-          ref: e4ba511c5be0f1f901e1ca958a1fd28839e30fdc
+          ref: f76eed986135a94f7283efb29ee412979a60275a
           path: _host_context_core_candidate
           persist-credentials: false
       - name: Package and qualify exact core source
@@ -37,11 +37,11 @@ jobs:
           set -euo pipefail
           core="$GITHUB_WORKSPACE/_host_context_core_candidate"
           evidence="$RUNNER_TEMP/host-context"
-          test "$(git -C "$core" rev-parse HEAD)" = e4ba511c5be0f1f901e1ca958a1fd28839e30fdc
+          test "$(git -C "$core" rev-parse HEAD)" = f76eed986135a94f7283efb29ee412979a60275a
           mkdir -p "$evidence/archives"
           CLANG="$(command -v clang-18)" python3 "$core/sdk/package.py" --profile core-source --out "$evidence/archives"
           archive="$evidence/archives/sco-sdk-core-source-2.4.0.zip"
-          printf '%s  %s\n' cd81ed6beeb079da967fff9a9cab751d76111b9325b9505f13fdc11a0da3cc52 "$archive" | sha256sum --check
+          printf '%s  %s\n' d9a329fadf6baa2409eafda3e3756c0c2f0b493534e335b5253e765bf78ede0c "$archive" | sha256sum --check
           for mode in release asan; do
             options=()
             if [ "$mode" = asan ]; then options+=(--sanitize); fi

@@ -15,12 +15,12 @@ import sys
 import xml.etree.ElementTree as ET
 import zipfile
 
-CORE = "e4ba511c5be0f1f901e1ca958a1fd28839e30fdc"
-ARCHIVE = "cd81ed6beeb079da967fff9a9cab751d76111b9325b9505f13fdc11a0da3cc52"
-INVENTORY = "2be34eead40fa43d6bb237541391b5d7f49c25ae6c1199aa22fefac35f069a9f"
+CORE = "f76eed986135a94f7283efb29ee412979a60275a"
+ARCHIVE = "d9a329fadf6baa2409eafda3e3756c0c2f0b493534e335b5253e765bf78ede0c"
+INVENTORY = "4d07c4ef6190f4ab7daca05ae36c66a28788579c458fba97c85b1de0710e7ea3"
 HELPER = "18146a218b6e0ecb8d01fd972fe004285363ecefcdd59b05cf1899433bf02e3d"
 VERIFIER = "594d539d996306ad560d44efe7bea1f8c1de99b6682e2fa563d6cd52827bf9aa"
-VERIFIER_TESTS = "2e6dcacb53db1b850d288325c128a9bb8917daf347f8ec8b3aeda4c4d587fd03"
+VERIFIER_TESTS = "d4638793a0121abe6194830bc3420e8279d3d30651ef09dc9bf7b97c6cecdf1f"
 VERIFIER_DOC = "28730643e9a4657ed3db26c8187646f41f603aafbcdd5b4278097afdd775fdb5"
 PREFIX = "sco-sdk-core-source-2.4.0"
 FILES = ("CMakeLists.txt", "context.h", "context.cpp", "main.cpp", "README.md", "qualify.py")
