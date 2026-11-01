@@ -12,13 +12,13 @@
 //     the private ranges are, which interface a socket binds). server/tools/check-net-boundary.sh pins the
 //     exact lines of the library's sources that do it, and the blob id of every file this one relies on.
 // The list lives in that script. When it fails, server/README.md, '## The sco-core boundary', says what to do.
-#include "server/net_boundary.h"
+#include "net_boundary.h"
 #include "sco/net/core.h"
 #include "sco/net/scope.h"
 #include "sco/net/transport.h"
 #include "sco/net/udp.h"
 #include "sco/net/wire.h"
-#include "plugins/multiplayer/relay_wire.h"
+#include "../plugins/multiplayer/relay_wire.h"
 #include <cstring>
 #include <memory>
 #include <type_traits>

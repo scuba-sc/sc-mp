@@ -233,23 +233,24 @@ behaviour $udp_cpp 'both Open calls end in the same bind' 'return OpenBound(port
 behaviour $udp_cpp 'a datagram longer than the buffer is reported as one byte too long' '*len = (msg.msg_flags & MSG_TRUNC) ? cap + 1 : static_cast<size_t>(r);'
 
 # ---- 3. every file the boundary reads, unchanged since it was checked ---------------------------------
-# Blob ids of the files in sco-sdk-core-source-2.4.0.zip (release sdk-v2.4.0-rc.2, SDK 2.4.0 release candidate 2).
-# They are the same ids as at sco-core 686187c (SDK 2.2.0, the pin of the standalone relay this server comes from)
-# and as at sdk-v2.4.0-rc.1: none of these files changed in the moves to SDK 2.3.0, 2.4.0 rc.1 or rc.2.
-# The last five files are not read by the checks above, but the relay compiles or includes them too (they sit
-# under the library's core and its wire), so a change in them is noticed the same way. The fifth is the kit's
-# tests/net_mem.h, the in-memory network that test_server includes (the program never does).
+# Blob ids of the files in sco-sdk-core-source-2.4.0.zip from immutable release sdk-v2.4.0
+# (archive SHA-256 df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51; signed source commit
+# 6106fa3639cbcc28f78a1ded8de2707de019f4d3). Compared with RC2, the release adds the bounded reliable-fragment
+# reservation in core.cpp and receive-buffer sizing/query support in udp.h and udp_posix.cpp. The rest of these
+# boundary inputs retain their pinned blob ids. The last five files are not read by the checks above, but the relay
+# compiles or includes them too (they sit under the library's core and its wire), so a change in them is noticed the
+# same way. The fifth is the kit's tests/net_mem.h, the in-memory network that test_server includes (the program never does).
 
 file_pin include/sc_net.h 452014ac6fbbc754c6a052cb3779c3d0df5e7b47
 file_pin include/sco/net/core.h 0928dfdeb502dd4086efc74bc82ebb26a82704fb
 file_pin include/sco/net/scope.h 650b1df56628c1ffeb99c9a84221e28d2164cd3a
 file_pin include/sco/net/transport.h 9ad67f517234f28fb99e44c8cf367a5ccb700542
-file_pin include/sco/net/udp.h 15d4bd57f5f3be2246be16d3d7ddb8da62c19675
+file_pin include/sco/net/udp.h a61e895e059f864a7d84231fb00eb654d5a2e7b2
 file_pin include/sco/net/wire.h 26e1ea011d6b131238a186e4fc0b33dbb69c03a0
-file_pin src/net/core.cpp 540ead2f58c2e49519e8c27b9918fabcecc1eba5
+file_pin src/net/core.cpp 7872b5b19dbe7c960bc4732f92f7d5a81f972e7f
 file_pin src/net/scope.cpp de7f0c50ca8178135363f4f049ba751a17de3382
 file_pin src/net/wire.cpp 317f2d63a8e7981f0399155918e67b0bccd9a0b6
-file_pin src/net/udp_posix.cpp 62402b44d666a6e1a5d7a79adce5c76d2fa3be22
+file_pin src/net/udp_posix.cpp 86244e35725136ec0ecfdf432ed7c891f6356591
 file_pin include/sco/net/reliable.h 1ed5158157831585a24c296d09519bea5697699a
 file_pin include/sco/net/sha2.h 9f68ac185abaf685ef10c29faf6d0e549ccf4cbc
 file_pin src/net/reliable.cpp 831e75bfc2d56e24c9051008b770a3d245a122a2

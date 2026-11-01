@@ -11,18 +11,20 @@ fallback. Host source retains the inactive old implementation for later cleanup.
   Goto always reports **G2 mutation not approved**, even if another table offers
   movement. There is no private relocation fallback.
 - Retained **Multiplayer** panel: Host, Join, Leave, player name, numeric IPv4
-  address, host/join ports, local avatar archetype, show ships, remembering and
+  address, host/join ports, local avatar archetype, show ships, remembering, text chat and
   authenticated peer list. Host-side `sco.widgets::ImGuiRenderer` draws it on the
   existing game-thread frame handoff; no ImGui context/types enter the module.
 - Host/Join are deliberately UI-only operations. Loading, changing settings,
   ticks, peer packets and automatic retries never set consent or open a socket.
   Requests borrow copied host-bound credentials and validate complete callbacks.
   Acceptance is not proof that a peer has authenticated/connected.
-- The host-owned G13 broker is ON by default, but **loopback-only with no startup
+- The intended host-owned G13 broker policy is **loopback-only with no startup
   socket**. Admission requires positively certified offline session, no EAC,
   blocked official network and the right process. Unknown/online/EAC refuses;
-  admission loss and owner unload close the session. Broker authenticates joins,
-  bounds peers/messages/rates and audit-logs its lifecycle without credentials.
+  admission loss and owner unload close the session. The current product hard-
+  disables native activation, so this broker policy is not presently reachable
+  from the game. It authenticates joins, bounds peers/messages/rates and audit-
+  logs its lifecycle without credentials when the native path is available.
 - Passphrase minimum is 12 bytes. The panel masks input with the additive
   `SCO_WIDGET_PASSWORD` flag; remembering defaults false. Leave clears the
   plugin's current credential. Masking is display protection, not encrypted
@@ -65,16 +67,27 @@ required for LAN; the broker accepts only a numeric private local interface and
 missing/truncated inputs and implicit LAN expansion refuse. Use the appropriate
 local interface and reciprocal peer policy on each instance. Default/unset is
 127.0.0.1 only. `SC_OFFLINE_MULTIPLAYER=off` disables the host broker while the
-plugin can still expose status. Legacy `multiplayer_allow` CIDR ranges do **not**
-authorize G13 and are never imported into broker policy. Existing launcher
-firewall allowances are not broker admission or a guarantee of reachability.
-Actual interface/firewall behavior still requires owner Windows acceptance.
+plugin can still expose status. Legacy `multiplayer_allow` CIDR ranges are not
+imported into the broker's bind/peer policy. They do participate in current
+shell firewall admission evidence, but they do not enable native activation.
+Existing launcher firewall allowances are not broker policy or a guarantee of
+reachability. Actual interface/firewall behavior still requires owner Windows
+acceptance.
 
-**Current production-shell blocker:** its G1 inspector still reports live
-session/effective official-network evidence Unknown; it does not certify these
-from launcher flags or offline patch success. G13 therefore refuses in that
-shell until a positively grounded admission collector is provided. No bypass or
-invented evidence was added to make this feature appear live.
+**Admission and activation status** (source reading only; not run in game). An earlier README revision referred
+to sc-offline `96686b9` and sco-core `844e136`; its claim that a configured
+`100.64.0.0/10` range forces `officialNetwork=Unknown` is stale. At sc-offline
+`e0ed7dba102b3463b04e02af1ff49a2addabe7ea`, `PrivateRange` explicitly includes
+the shared `100.64.0.0/10` range, the launcher accepts it as a configured range,
+and admission evidence includes that set in its firewall-coverage calculation.
+See [`private_network_ranges.h`](https://github.com/scuba-sc/sc-offline/blob/e0ed7dba102b3463b04e02af1ff49a2addabe7ea/src/private_network_ranges.h#L1-L19),
+[`launcher.cpp`](https://github.com/scuba-sc/sc-offline/blob/e0ed7dba102b3463b04e02af1ff49a2addabe7ea/launcher/launcher.cpp#L198-L235)
+and [`admission_evidence.h`](https://github.com/scuba-sc/sc-offline/blob/e0ed7dba102b3463b04e02af1ff49a2addabe7ea/src/admission_evidence.h#L494-L515).
+This is admission evidence, not proof that multiplayer can start: the same source hard-codes
+[`NativeActivationAvailable()` to `false`](https://github.com/scuba-sc/sc-offline/blob/e0ed7dba102b3463b04e02af1ff49a2addabe7ea/src/native_activation_policy.h#L1-L8),
+and [`docs/status.md`](https://github.com/scuba-sc/sc-offline/blob/e0ed7dba102b3463b04e02af1ff49a2addabe7ea/docs/status.md#L57-L68)
+states that native startup remains refused and no session has been run for this candidate. The plugin's LAN policy
+above does not activate a host, and neither these source readings nor synthetic tests establish game-host readiness.
 
 ## Co-presence, not shared simulation
 
@@ -103,7 +116,7 @@ incompatible. A later valid announcement can complete admission. Leaving clears 
 A verified player that sends a structurally valid v1 pose contradicts its announcement and is
 excluded until it leaves and rejoins or the session ends. Unknown or malformed pose layouts are
 dropped without interpreting their contents. When sco.net provides channel registration methods
-but refuses this channel, the plugin rolls back loading. If registration, sending, or membership methods are unavailable, the plugin reports the protocol
+but refuses one of its channels (the chat channel included), the plugin rolls back loading. If registration, sending, or membership methods are unavailable, the plugin reports the protocol
 unavailable and refuses Host and Join. When registration methods are absent it still loads without
 registered network channels and must be reloaded with the channel service available.
 
@@ -194,8 +207,54 @@ roster has been read.
 
 **Not run in game.** The workflow test, the relay-join test (synthetic game providers on a real
 `sco::net::Core` joining a real sco-relay over loopback UDP) and the Windows build are the only evidence;
-no real game, EAC, admission collector or LAN was involved. The production-shell admission blocker above
-is unchanged: until a positively grounded admission collector exists, that shell refuses Host and Join.
+no real game, EAC, admission collector or LAN was involved. What the production shell's admission check reads on a
+real PC is not known from here; "Admission and activation status" above is from reading the source only.
+
+## Text chat
+
+Players in a session can send each other short lines of text from the panel: the **Chat** list, the message box and
+**Send** (panel nodes 20 to 23; nodes 1 to 19 keep their meaning). It works the same in a session a player hosts and in
+one a relay server hosts, with nearby-only on or off, because it rides one more channel, `multiplayer.chat`, which the
+network library relays between players the way it relays spawns: the relay server needs no change. It changes no
+existing layout, so the protocol generation stays **2**. **Not run in game.** The workflow test and the loopback relay
+test (below) are the only evidence; how the panel looks and feels in game is left to testers.
+
+- **Wire.** `multiplayer.chat` is reliable, sent to every other player, at most 164 bytes. Version 1 is `u8` version (1),
+  `u8` 0, `u16` little-endian `n` (1 to 160), then `n` bytes of text: exactly 4 + `n` bytes. The text is well-formed
+  UTF-8 with no control character (C0, DEL, C1) and no bidirectional embedding, override or isolate control. The line
+  "hi" is `01 00 02 00 68 69`. The layout is in `multiplayer_wire.h`, with golden bytes in the workflow test; a later
+  layout gets a new version number and version 1 is never reinterpreted.
+- **Who is read.** Only a player this module has verified: a member of the session now whose `multiplayer.protocol`
+  announcement of the current generation was seen (so not a peer that left, nor one that came back without announcing
+  again), not this player, and never a relay server (peer 1 with the relay role). A line from anyone else, and a line that
+  is not the layout (wrong length, a trailing byte, bad UTF-8), is dropped and counted.
+- **Limits.** 160 bytes a line. A player sends at most 3 lines in 5 seconds and reads at most 6 from one sender in
+  5 seconds; the extras are dropped and counted, and `multiplayer.status` adds "chat: N dropped over the rate limit, M not
+  accepted" once either count is not zero. The history keeps the last 32 lines. The history and the draft in the
+  message box last for one session: **Leave**, the end of the session and unload clear them. A sent line is shown only
+  after sco.net took it; when it refuses, nothing is shown and the draft stays.
+- **Plain text only.** A line is copied into the history and shown. It is never written to `mod.log` or anywhere else,
+  never used as a format string, and never run as a command or handed to one (CONTRIBUTING, guardrail 3: no remote
+  commands between peers). A line is labelled with the speaker's name and peer id ("Alice #3"), so it cannot pass for
+  this player's own `You: ` lines, and a name that is not clean text or holds a colon (the separator, which could start
+  a second speaker) is not used at all ("peer 3").
+- **Not encrypted.** Like every sco.net message, chat is authenticated but readable by anyone on the network path. Use a
+  VPN, and send nothing private. The panel says so beside the message box.
+- **Older plugins.** A build without chat never registers the channel and so receives nothing; nothing else changes for it,
+  and no synchronized upgrade is needed for chat. sco.net drops a line without a word when no other player has the
+  channel, so **Send** cannot tell who actually sees it.
+- **Early lines.** A line sent in the first seconds after a join can be dropped silently by a receiver that has not yet
+  verified the sender, because chat and the `multiplayer.protocol` announcement travel on separate reliable channels and
+  nothing orders one against the other. Each player repeats its announcement every few seconds, so later lines are read.
+
+Tests: the workflow test (`tools/multiplayer_workflow_test.cpp`) checks the layout (golden bytes, length edges, malformed
+UTF-8, trailing bytes), the rates with a clock it steps by hand, and the panel in a listen-host session and a relay session:
+unannounced, relay, departed and over-rate senders, a refused send, text that looks like a command, a format string or
+markup, speaker names that try to pass for this player ("You") or to start a second speaker, a joiner reading a listen
+host, and that no chat text reaches `mod.log` or the status line. `TestRealUdpChatThroughRelay` in
+`server/tests/test_udp.cpp` runs the relay's own session over loopback UDP, in its default mode and nearby-only: lines
+arrive with their writers as the origin, a receiver drops one over its limit, a player without the channel receives none
+and still gets poses, and the relay's log holds no chat text.
 
 ## Ghost motion
 
@@ -285,14 +344,15 @@ as described above. `multiplayer-motion-test --track-tests` runs only these buff
 
 ## Tester cases (all **not run in game**)
 
-The production shell refuses Host and Join until an admission collector exists (above), so every case
-that needs a connection needs a shell that grants admission. Report what `mod.log` says.
+These are future owner tests. The current product's native preflight refuses startup before plugins load, so none of the
+Host/Join scenarios below is presently runnable from the game. A change to firewall evidence, the relay, or a synthetic
+provider does not enable native activation. When an owner-reviewed native path exists, run these checks and report
+what `mod.log` says.
 
 1. Start the game with the module installed and do nothing: no `[multiplayer]` line, no socket, **Join**
    has not been pressed.
-2. In the production shell (admission Unknown) press **Join** with a sco-relay server's address and
-   passphrase: the panel says `Join request refused (1)` and `mod.log` has `join request refused (1)`;
-   nothing is sent. Same with EAC running.
+2. After native activation is available, change EAC or firewall evidence after startup and verify Host/Join are refused or
+   the active session closes. Current source says native activation is unavailable, so this test has not been run.
 3. In a shell that grants admission: **Join**. Expect `join request accepted: waiting for the session (0)`,
    then within the server's announce interval `relay server found: ...` and `joined relay server as peer P in slot S (generation G): ...`.
 4. Two players on the server: each sees one ghost, the panel lists one other player, and the server is not in the list.
@@ -301,12 +361,15 @@ that needs a connection needs a shell that grants admission. Report what `mod.lo
 7. A third player in another place with nearby-only on: no ghost for them, `nearby-only: poses go to the relay server ...` in `mod.log`.
 8. The other player walks, stops and turns: the ghost follows about a quarter of a second behind with no freeze
    at a dropped message and no jump; a quantum jump or a respawn moves the ghost at once.
+9. Chat, two players: type a line in the message box and press **Send**. The other player's **Chat** list shows it with
+   your name and peer id (`Name #3: ...`); yours shows it as `You: ...`. Report how the list, the box and the button look and feel in game. Nothing
+   of what was said is in `mod.log`.
+10. Chat, a third player on a plugin build without chat in the same session: they see no line and nothing else changes.
 
 ## Build/install and evidence boundary
 
-The pinned SDK is **2.4.0 release candidate 2** (release
-[`sdk-v2.4.0-rc.2`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2); the final
-`sdk-v2.4.0` will follow). It **contains G13, G3 and retained widgets**
+The pinned SDK is the immutable **2.4.0 release** (release
+[`sdk-v2.4.0`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0)). It **contains G13, G3 and retained widgets**
 (`sc_private_session.h`, `sc_game_spatial.h`, `sco_widgets.h`), as every SDK
 since 2.2.0 has; sdk-v2.0.0 did not. The CI release job does not yet stage
 multiplayer. The external target refuses a missing header and never adds a host

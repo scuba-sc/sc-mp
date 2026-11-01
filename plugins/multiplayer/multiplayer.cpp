@@ -45,8 +45,8 @@ namespace rw=sco::relay::wire;
 namespace mpprotocol=sco::relay::wire::protocol;
 // A pose from this plugin must fit the relay's near_up / near.<slot> envelope (relay_wire.h), or nearby-only forwarding would drop it.
 static_assert(mpwire::kMaxPose<=rw::kPoseMaxBytes,"a pose from multiplayer_wire.h must fit the relay wire's pose limit");
-enum ChannelIndex : unsigned { kPoseChannel,kSpawnChannel,kDespawnChannel,kRelayChannel,kNearUpChannel,kProtocolChannel,kChannelCount };
-constexpr const char* channels[]={"multiplayer.pose","multiplayer.spawn","multiplayer.despawn","multiplayer.relay","multiplayer.near_up",mpprotocol::kChannel};
+enum ChannelIndex : unsigned { kPoseChannel,kSpawnChannel,kDespawnChannel,kRelayChannel,kNearUpChannel,kProtocolChannel,kChatChannel,kChannelCount };
+constexpr const char* channels[]={"multiplayer.pose","multiplayer.spawn","multiplayer.despawn","multiplayer.relay","multiplayer.near_up",mpprotocol::kChannel,mpwire::kChatChannel};
 static_assert(sizeof(channels)/sizeof(channels[0])==kChannelCount,"one name per channel");
 constexpr uint64_t kHostPeer=1; // sco.net: the session host is always peer 1
 constexpr const char* panelId="multiplayer.session";
@@ -95,6 +95,16 @@ struct Relay {
     unsigned bad=0;                   // malformed relay messages this session
     bool nearWarned=false;            // the "cannot listen on multiplayer.near.<slot>" warning was written this session
 } relay;
+// Text chat (multiplayer.chat, multiplayer_wire.h), for one session only: Leave, the end of the session and unload clear it (Clear).
+// What a player says is copied into rows and shown. It is never logged, never used as a format string, never run as a command.
+struct ChatSenderWindow { uint64_t id=0; mpwire::RateWindow<mpwire::kChatAcceptPerWindow> window; };
+struct ChatState {
+    std::vector<std::string> rows;                           // "name: text", oldest first, at most mpwire::kChatHistoryRows
+    char draft[SCO_WIDGETS_MAX_TEXT+1]="";                   // what the message box holds
+    mpwire::RateWindow<mpwire::kChatSendsPerWindow> sent;    // this player's own sends
+    std::vector<ChatSenderWindow> senders;                   // how much each verified sender has had read lately
+    unsigned overRate=0,notAccepted=0;                       // lines dropped for rate; lines from nobody verified or not the contract
+} chat;
 uint64_t Now() { return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()); }
 void Wipe(char* s,size_t n) { volatile char* p=s;while(n--) *p++=0; }
 template<size_t N> bool Text(char (&out)[N],const char* value,size_t max=N-1) {
@@ -246,11 +256,12 @@ void ResetRelay() {
     SetNearChannel("");
     relay=Relay();
 }
-void Clear() { havePreviousSent=false;for(auto& p:peers) { Remove(p.avatar);Remove(p.ship); }peers.clear();protocolPeers.clear();protocolContradictions.clear();lastProtocol=0;protocolWaitSince=0;protocolWarned=false;poseWarned=false;RetryCleanup();announced=false;announcedShip[0]=0;shipId=0;ResetRelay(); }
+void Clear() { havePreviousSent=false;for(auto& p:peers) { Remove(p.avatar);Remove(p.ship); }peers.clear();protocolPeers.clear();protocolContradictions.clear();lastProtocol=0;protocolWaitSince=0;protocolWarned=false;poseWarned=false;RetryCleanup();announced=false;announcedShip[0]=0;shipId=0;ResetRelay();chat=ChatState(); }
 // A temporary loss of host evidence is not a session reset: preserve contradictions.
 void ClearAdmission() {
     const auto contradictions=protocolContradictions;const bool warned=protocolWarned, poseWarning=poseWarned;
-    Clear();protocolContradictions=contradictions;protocolWarned=warned;poseWarned=poseWarning;
+    ChatState kept=std::move(chat); // a lost verification is not a new session: what was said stays
+    Clear();protocolContradictions=contradictions;protocolWarned=warned;poseWarned=poseWarning;chat=std::move(kept);
 }
 Peer* Find(uint64_t id) { for(auto& p:peers) if(p.id==id) return &p;return nullptr; }
 // The session roster. sco.net 1.0 sessions hold at most SCO_NET_MAX_PEERS; a larger one answers SCO_TOO_MANY with the member count,
@@ -370,6 +381,68 @@ void OnDespawn(uint64_t sender,const void* data,uint32_t len,void*) {
     if(kind==mpwire::kAvatar) { Remove(p->avatar);p->avatarClass[0]=0; }
     else { Remove(p->ship);p->shipClass[0]=0; }
     RetryCleanup();
+}
+// multiplayer.chat. A line is read only from a player this module has verified: a member of the session now, whose player
+// announcement of the current protocol generation was seen, who is not this player and not the relay server (peer 1 with the
+// relay role). Add repeats the same tests; it gives the record that names the sender.
+Peer* ChatSender(uint64_t id) {
+    if(!id || !Active() || !METHOD(net,self_peer) || id==net->self_peer() || !HostCompatible() || ProtocolRole(id)!=mpprotocol::kPlayer) return nullptr;
+    if(relay.seen && id==kHostPeer) return nullptr;
+    std::vector<sco_net_peer> members;
+    if(!Members(members) || std::none_of(members.begin(),members.end(),[id](const sco_net_peer& p){return p.peer_id==id;})) return nullptr;
+    return Add(id);
+}
+// One reading window per verified sender, kept apart from the peer record (which a new announcement drops) so that cannot reset it.
+mpwire::RateWindow<mpwire::kChatAcceptPerWindow>* ChatWindow(uint64_t id) {
+    for(auto& s:chat.senders) if(s.id==id) return &s.window;
+    if(chat.senders.size()>=kMaxMembers) return nullptr; // only members get one and it goes when they leave, so this is not reached
+    chat.senders.emplace_back();chat.senders.back().id=id;return &chat.senders.back().window;
+}
+void ForgetChatSender(uint64_t id) {
+    chat.senders.erase(std::remove_if(chat.senders.begin(),chat.senders.end(),[id](const ChatSenderWindow& s){return s.id==id;}),chat.senders.end());
+}
+void AddChatRow(const std::string& who,const char* text) {
+    if(chat.rows.size()>=mpwire::kChatHistoryRows) chat.rows.erase(chat.rows.begin());
+    chat.rows.push_back(who+": "+text);
+}
+// The label in front of a line another player said. A name another player chose may hold anything sco.net lets through, so it
+// cannot be trusted to say who spoke: the label always ends in that player's peer id ("Alice #3"), which this player's own
+// "You" lines never do, and a name that is not clean text or holds ':' (the separator, which could start a second speaker) is
+// not used at all ("peer 3").
+std::string ChatName(const Peer& p) {
+    const std::string id=std::to_string(p.id);
+    if(p.name[0] && !std::strchr(p.name,':') && mpwire::ChatTextOk(p.name,std::strlen(p.name))) return std::string(p.name)+" #"+id;
+    return "peer "+id;
+}
+void OnChat(uint64_t sender,const void* data,uint32_t len,void*) {
+    Peer* p=ChatSender(sender);
+    mpwire::ChatLine line{};
+    if(!p || !mpwire::DecodeChat(data,len,line)) { ++chat.notAccepted;return; }
+    mpwire::RateWindow<mpwire::kChatAcceptPerWindow>* window=ChatWindow(sender);
+    if(!window || !window->Take(Now())) { ++chat.overRate;return; }
+    AddChatRow(ChatName(*p),line.text);
+}
+// Sending needs a session whose host has announced a compatible protocol (the same evidence a player needs to be seen).
+bool ChatReady() { return ProtocolAvailable() && Active() && METHOD(net,self_peer) && net->self_peer() && HostCompatible(); }
+void SetDraft(const char* text) {
+    const size_t n=text?std::strlen(text):sizeof(chat.draft);
+    if(n>=sizeof(chat.draft)) return; // longer than the widget service allows: keep the old draft
+    std::memcpy(chat.draft,text,n);chat.draft[n]=0;
+}
+// The Send button. Nothing is shown, stored or logged unless sco.net took the message; a refusal says why and keeps the draft.
+void SendChat() {
+    if(!ChatReady()) { std::snprintf(reply,sizeof(reply),"Chat message not sent: no session with compatible players");return; }
+    uint8_t message[mpwire::kMaxChat];
+    const size_t size=mpwire::EncodeChat(chat.draft,std::strlen(chat.draft),message,sizeof(message));
+    if(!size) { std::snprintf(reply,sizeof(reply),"Chat message not sent: write 1 to %u bytes of plain text, without control characters",static_cast<unsigned>(mpwire::kMaxChatText));return; }
+    const uint64_t now=Now();
+    if(!chat.sent.Room(now)) { std::snprintf(reply,sizeof(reply),"Chat message not sent: at most %u messages in %u seconds",mpwire::kChatSendsPerWindow,static_cast<unsigned>(mpwire::kChatWindowMs/1000));return; }
+    const sco_result result=net->send_channel(self,mpwire::kChatChannel,message,static_cast<uint32_t>(size));
+    if(result!=SCO_OK) { std::snprintf(reply,sizeof(reply),"Chat message not sent (%d)",static_cast<int>(result));return; }
+    chat.sent.Add(now);
+    AddChatRow("You",chat.draft);
+    chat.draft[0]=0;
+    std::snprintf(reply,sizeof(reply),"Chat message sent. It is not encrypted, and players on older plugin builds do not see it.");
 }
 void NoteBadRelay(const char* what) {
     // One line per session, then only the count (shown by multiplayer.status): a broken or foreign server cannot flood mod.log.
@@ -523,13 +596,13 @@ void OnPeer(const char*,const void* data,void*) {
     const auto* e=static_cast<const sco_net_peer_event*>(data);if(e->size<sizeof(*e)) return;
     // Membership alone is not protocol admission. Forget stale evidence on leave or rejoin.
     if(e->what==SCO_NET_PEER_JOINED) { protocolContradictions.erase(std::remove(protocolContradictions.begin(),protocolContradictions.end(),e->peer.peer_id),protocolContradictions.end());ForgetProtocol(e->peer.peer_id);DropPeer(e->peer.peer_id);if(Active()) { SendProtocol();Announce(true); } }
-    if(e->what==SCO_NET_PEER_LEFT) { protocolContradictions.erase(std::remove(protocolContradictions.begin(),protocolContradictions.end(),e->peer.peer_id),protocolContradictions.end());ForgetProtocol(e->peer.peer_id);DropPeer(e->peer.peer_id);if(e->peer.peer_id==kHostPeer) Clear(); }
+    if(e->what==SCO_NET_PEER_LEFT) { protocolContradictions.erase(std::remove(protocolContradictions.begin(),protocolContradictions.end(),e->peer.peer_id),protocolContradictions.end());ForgetProtocol(e->peer.peer_id);DropPeer(e->peer.peer_id);ForgetChatSender(e->peer.peer_id);if(e->peer.peer_id==kHostPeer) Clear(); }
 }
 void OnState(const char*,const void* data,void*) {
     if(!data) return;
     const auto* e=static_cast<const sco_net_state_event*>(data);if(e->size<sizeof(*e)) return;
     if(!e->active) { Clear();std::memcpy(reason,e->reason,sizeof(reason));reason[sizeof(reason)-1]=0; }
-    else { reason[0]=0;announced=false;lastSend=0;ResetRelay(); }
+    else { reason[0]=0;announced=false;lastSend=0;ResetRelay();chat=ChatState(); }
 }
 bool Resolve(const Peer& p,bool ship,uint64_t now,uint64_t& zone,double pos[3],double rot[4]) {
     const mpwire::Pose* latest=p.track.Newest();
@@ -589,7 +662,9 @@ sco_result Status(const sco_arg*,uint32_t nargs,void*,char* out,uint32_t cap) {
     const auto state=State();
     const bool consistent=MembershipConsistent();char note[128]="";if(consistent) RelayNote(note,sizeof(note));
     const size_t unverified=UnverifiedCount();
-    std::snprintf(out,cap,"Multiplayer: G13 %s; protocol %s; transport state %u; mode: %s; %zu other players%s; %zu unverified or incompatible peers%s; %zu cleanup pending; Host/Join UI %s; G2 goto unavailable%s%s",METHOD(broker,request_host)?"available":"unavailable (admission/provider)",ProtocolAvailable()?"available":"unavailable (network service)",state.state,SessionMode(state),consistent?peers.size():0,note,unverified,ProtocolWait(),cleanup.size(),panelLive?"available":"unavailable",reason[0]?"; ":"",reason);return SCO_OK;
+    char chatNote[96]="";
+    if(chat.overRate || chat.notAccepted) std::snprintf(chatNote,sizeof(chatNote),"; chat: %u dropped over the rate limit, %u not accepted",chat.overRate,chat.notAccepted);
+    std::snprintf(out,cap,"Multiplayer: G13 %s; protocol %s; transport state %u; mode: %s; %zu other players%s; %zu unverified or incompatible peers%s; %zu cleanup pending; Host/Join UI %s; G2 goto unavailable%s%s%s",METHOD(broker,request_host)?"available":"unavailable (admission/provider)",ProtocolAvailable()?"available":"unavailable (network service)",state.state,SessionMode(state),consistent?peers.size():0,note,unverified,ProtocolWait(),cleanup.size(),panelLive?"available":"unavailable",chatNote,reason[0]?"; ":"",reason);return SCO_OK;
 }
 sco_result Leave(const sco_arg*,uint32_t nargs,void*,char* out,uint32_t cap) {
     if(nargs) return SCO_BAD_ARG;
@@ -630,12 +705,13 @@ void Control(bool host) {
 }
 void PanelEvent(const char* id,const sco_widget_event* e,void*) {
     if(!panelLive || !id || std::strcmp(id,panelId) || !e || e->size<sizeof(*e)) return;
-    bool save=false;
+    bool save=false,refreshPanel=true;
     if(e->kind==SCO_WIDGET_BUTTON) {
         if(e->node_id==1) Control(true);else if(e->node_id==2) Control(false);
         else if(e->node_id==3) Leave(nullptr,0,nullptr,reply,sizeof(reply));
         else if(e->node_id==13) GoTo(nullptr,0,nullptr,reply,sizeof(reply));
         else if(e->node_id==19) std::snprintf(reply,sizeof(reply),"%s",SaveProfile()==SCO_OK?"Server profile saved":"Server profile not saved (empty address, storage unavailable or full)");
+        else if(e->node_id==22) SendChat();
     } else if(e->kind==SCO_WIDGET_COMBO && e->node_id==18) {
         SelectProfile(e->index);
     } else if(e->kind==SCO_WIDGET_TEXT_INPUT && e->text) {
@@ -643,6 +719,7 @@ void PanelEvent(const char* id,const sco_widget_event* e,void*) {
         else if(e->node_id==5) save=Text(cfg.address,e->text);
         else if(e->node_id==6) Text(cfg.pass,e->text,255); // host widgets limit
         else if(e->node_id==9 && mpwire::ClassOk(e->text,std::strlen(e->text))) { save=Text(cfg.avatar,e->text);announced=false; }
+        else if(e->node_id==21) { SetDraft(e->text);refreshPanel=false; } // preserve later events queued from this panel generation
     } else if(e->kind==SCO_WIDGET_SLIDER && std::isfinite(e->value) && e->value>=1024 && e->value<=65535 && e->value==std::floor(e->value)) {
         if(e->node_id==7) { cfg.hostPort=static_cast<int>(e->value);save=true; }
         else if(e->node_id==8) { cfg.joinPort=static_cast<int>(e->value);save=true; }
@@ -651,8 +728,9 @@ void PanelEvent(const char* id,const sco_widget_event* e,void*) {
         else if(e->node_id==11) { cfg.remember=e->value!=0;save=true; }
     }
     if(save && SaveSettings()!=SCO_OK) std::snprintf(reply,sizeof(reply),"Settings not saved: sco.storage unavailable/refused; session-only values retained");
-    UpdatePanel();
+    if(refreshPanel) UpdatePanel();
 }
+constexpr unsigned kPanelNodes=23; // 1-19: the session controls as before; 20-23: the chat history, the message box, Send and the notice
 void UpdatePanel() {
     if(!METHOD(widgets,set_panel) || !METHOD(widgets,remove_panel)) { panelLive=false;return; }
     const auto state=State();const bool consistent=MembershipConsistent();char note[128]="";if(consistent) RelayNote(note,sizeof(note));
@@ -660,8 +738,8 @@ void UpdatePanel() {
     std::vector<std::string> peerText;std::vector<const char*> rows;
     for(const auto& p:peers) { if(!consistent) break;char s[200];std::snprintf(s,sizeof(s),"%s: %s; avatar %s, ship %s",p.name,p.track.Valid()?"pose observed (v2 motion)":"waiting for pose",p.avatar.id?"owned ghost":"not shown",p.ship.id?"owned ghost":"not shown");peerText.emplace_back(s); }
     for(const auto& s:peerText) rows.push_back(s.c_str());
-    sco_widget_node nodes[19]{};
-    for(unsigned i=0;i<19;++i) { nodes[i].size=sizeof(nodes[i]);nodes[i].id=i+1;nodes[i].kind=SCO_WIDGET_LABEL; }
+    sco_widget_node nodes[kPanelNodes]{};
+    for(unsigned i=0;i<kPanelNodes;++i) { nodes[i].size=sizeof(nodes[i]);nodes[i].id=i+1;nodes[i].kind=SCO_WIDGET_LABEL; }
     for(unsigned i=0;i<3;++i) nodes[i].kind=SCO_WIDGET_BUTTON;
     nodes[0].label="Host private session";nodes[1].label="Join private session";nodes[2].label="Leave";
     for(unsigned i:{3u,4u,5u,8u}) nodes[i].kind=SCO_WIDGET_TEXT_INPUT;
@@ -681,10 +759,18 @@ void UpdatePanel() {
     for(unsigned i=0;i<kProfiles;++i) { char text[48];std::snprintf(text,sizeof(text),"%s%s%d",profiles[i].address[0]?profiles[i].address:"Empty slot ",profiles[i].address[0]?":":"",profiles[i].address[0]?profiles[i].port:static_cast<int>(i+1));profileLabels[i]=text;profileItems[i]=profileLabels[i].c_str(); }
     nodes[17].kind=SCO_WIDGET_COMBO;nodes[17].label="Saved servers";nodes[17].items=profileItems.data();nodes[17].item_count=kProfiles;nodes[17].index=selectedProfile;
     nodes[18].kind=SCO_WIDGET_BUTTON;nodes[18].label="Save server profile";
-    sco_widget_node_1_2 tagged[19]{};
-    const char* tags[]={"host","join","leave","name","address","passphrase","host-port","join-port","avatar","ships","remember","status","goto","reply","notice","players","scope","profiles","save-profile"};
-    for(unsigned i=0;i<19;++i) { tagged[i].base.base=nodes[i];tagged[i].base.base.size=sizeof(tagged[i]);tagged[i].tag=tags[i]; }
-    panelLive=widgets->set_panel(self,panelId,"Multiplayer",&tagged[0].base.base,19,sizeof(tagged[0]),PanelEvent,nullptr)==SCO_OK;
+    // Chat: the history (the rows live in chat.rows until the call below returns), the message box, Send, and what chat is not.
+    std::vector<const char*> chatRows;
+    for(const auto& line:chat.rows) chatRows.push_back(line.c_str());
+    nodes[19].kind=SCO_WIDGET_LIST;nodes[19].label="Chat";nodes[19].items=chatRows.empty()?nullptr:chatRows.data();nodes[19].item_count=static_cast<uint32_t>(chatRows.size());nodes[19].index=-1;
+    nodes[20].kind=SCO_WIDGET_TEXT_INPUT;nodes[20].label="Chat message (1-160 bytes, plain text)";nodes[20].text=chat.draft;
+    nodes[21].kind=SCO_WIDGET_BUTTON;nodes[21].label="Send chat message";nodes[21].flags=ChatReady()?0:SCO_WIDGET_DISABLED;
+    nodes[22].label="Chat is plain text and not encrypted: use a VPN. Players on older plugin builds do not see it.";
+    sco_widget_node_1_2 tagged[kPanelNodes]{};
+    const char* tags[]={"host","join","leave","name","address","passphrase","host-port","join-port","avatar","ships","remember","status","goto","reply","notice","players","scope","profiles","save-profile","chat","chat-message","chat-send","chat-notice"};
+    static_assert(sizeof(tags)/sizeof(tags[0])==kPanelNodes,"one tag per panel node");
+    for(unsigned i=0;i<kPanelNodes;++i) { tagged[i].base.base=nodes[i];tagged[i].base.base.size=sizeof(tagged[i]);tagged[i].tag=tags[i]; }
+    panelLive=widgets->set_panel(self,panelId,"Multiplayer",&tagged[0].base.base,kPanelNodes,sizeof(tagged[0]),PanelEvent,nullptr)==SCO_OK;
 }
 // Drop all previously trusted state when membership cannot be established, but retain the
 // wait timer so the panel eventually reports a timeout even while the list stays unusable.
@@ -705,7 +791,7 @@ void Tick(const char*,const void*,void*) {
     if(net->self_peer()!=kHostPeer && std::none_of(members.begin(),members.end(),[](const sco_net_peer& p){return p.peer_id==kHostPeer;})) ClearUnverified();
     for(size_t i=0;i<protocolPeers.size();) {
         const uint64_t id=protocolPeers[i].id;
-        if(std::none_of(members.begin(),members.end(),[id](const sco_net_peer& p){return p.peer_id==id;})) { DropPeer(id);ForgetProtocol(id); }
+        if(std::none_of(members.begin(),members.end(),[id](const sco_net_peer& p){return p.peer_id==id;})) { DropPeer(id);ForgetProtocol(id);ForgetChatSender(id); }
         else ++i;
     }
     const uint64_t now=Now();
@@ -756,9 +842,11 @@ SCO_EXPORT sco_result sco_plugin_load(const sco_api* a,sco_plugin* s) {
         // reliable and FROM_HOST: only a session host that speaks the relay contract (sco-relay) ever sends it.
         // multiplayer.near_up is unreliable and TO_HOST (the server reads it, it is not relayed); with nearby-only on, a
         // player's own multiplayer.near.<slot> is registered later, when the roster has told its slot.
-        const uint32_t flags[kChannelCount]={0,SCO_NET_RELIABLE,SCO_NET_RELIABLE,SCO_NET_RELIABLE|SCO_NET_FROM_HOST,SCO_NET_TO_HOST,SCO_NET_RELIABLE};
-        const uint32_t sizes[kChannelCount]={mpwire::kMaxPose,mpwire::kMaxSpawn,mpwire::kDespawn,static_cast<uint32_t>(rw::kRelayMaxBytes),static_cast<uint32_t>(rw::kNearUpMaxBytes),static_cast<uint32_t>(mpprotocol::kBytes)};
-        const sco_net_on_message callbacksNet[kChannelCount]={OnPose,OnSpawn,OnDespawn,OnRelay,OnNeverReceived,OnProtocol};
+        // multiplayer.chat is reliable and goes to every other player, relayed by whichever peer hosts the session (nearby-only
+        // does not touch it). Players on a build without it never register the channel and so receive nothing.
+        const uint32_t flags[kChannelCount]={0,SCO_NET_RELIABLE,SCO_NET_RELIABLE,SCO_NET_RELIABLE|SCO_NET_FROM_HOST,SCO_NET_TO_HOST,SCO_NET_RELIABLE,SCO_NET_RELIABLE};
+        const uint32_t sizes[kChannelCount]={mpwire::kMaxPose,mpwire::kMaxSpawn,mpwire::kDespawn,static_cast<uint32_t>(rw::kRelayMaxBytes),static_cast<uint32_t>(rw::kNearUpMaxBytes),static_cast<uint32_t>(mpprotocol::kBytes),static_cast<uint32_t>(mpwire::kMaxChat)};
+        const sco_net_on_message callbacksNet[kChannelCount]={OnPose,OnSpawn,OnDespawn,OnRelay,OnNeverReceived,OnProtocol,OnChat};
         for(unsigned i=0;i<kChannelCount && r==SCO_OK;++i) { r=net->register_channel(self,channels[i],flags[i],sizes[i],callbacksNet[i],nullptr);if(r==SCO_OK) ++registeredChannels; }
     }
     if(r==SCO_OK) r=api->subscribe(self,"tick",Tick,nullptr);

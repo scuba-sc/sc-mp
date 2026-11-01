@@ -20,6 +20,12 @@
 //     u64 sessionId ((sender peer id << 32) | kind)   class bytes ([A-Za-z0-9_-])
 //   multiplayer.despawn   reliable. That thing is gone:
 //     u8 version (1)   u8 kind   u16 0   u32 0   u64 sessionId
+//   multiplayer.chat      reliable, to every other player (whichever peer hosts the session relays it). One line of text:
+//     u8 version (1)   u8 0   u16 n (1..kMaxChatText)   n bytes of text; exactly 4 + n bytes in all, at most kMaxChat
+//     The text is well-formed UTF-8 (shortest forms, no surrogates, nothing above U+10FFFF) with no control character:
+//     none of C0 (U+0000..U+001F), DEL (U+007F) or C1 (U+0080..U+009F), and no bidirectional embedding, override or
+//     isolate (U+202A..U+202E, U+2066..U+2069). "hi" is 01 00 02 00 68 69. Plain text, not encrypted, like every
+//     sco.net message.
 //
 // Decode* check everything (sizes, counts, characters, finite numbers, unit rotations) and return
 // false for anything else: the sender is another player's game, so nothing is trusted.
@@ -47,6 +53,17 @@ constexpr size_t kMaxPoseV2 = kMaxPose; // relay limit; oversized v2 combination
 constexpr size_t kSpawnHeader = 12;
 constexpr size_t kMaxSpawn = kSpawnHeader + kMaxClass;
 constexpr size_t kDespawn = 16;
+constexpr const char* kChatChannel = "multiplayer.chat";
+constexpr uint8_t kChatVersion = 1;
+constexpr size_t  kChatHeader = 4;
+constexpr size_t  kMaxChatText = 160;                      // bytes of text in one line
+constexpr size_t  kMaxChat = kChatHeader + kMaxChatText;   // the whole message: the channel's max_len
+// Chat limits. A window is 5 seconds; a player sends at most kChatSendsPerWindow lines in one, and reads at most
+// kChatAcceptPerWindow from one sender (the rest are dropped and counted). The history shows the last kChatHistoryRows.
+constexpr uint64_t kChatWindowMs = 5000;
+constexpr unsigned kChatSendsPerWindow = 3;
+constexpr unsigned kChatAcceptPerWindow = 6;
+constexpr size_t   kChatHistoryRows = 32;
 static_assert(kMaxPose <= 1200, "a pose must fit one unreliable sco.net message");
 
 struct Level {
@@ -74,6 +91,11 @@ struct Spawn {
     char     cls[kMaxClass + 1];
 };
 
+struct ChatLine {
+    size_t length;                  // bytes of text
+    char   text[kMaxChatText + 1];  // the text, NUL-terminated
+};
+
 inline uint64_t SessionId(uint64_t peer, uint8_t kind) { return (peer << 32) | kind; }
 
 // ---- checks -------------------------------------------------------------------------------------
@@ -91,6 +113,37 @@ inline bool ClassOk(const char* s, size_t n) {
         const char c = s[i];
         if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-'))
             return false;
+    }
+    return true;
+}
+
+// Text another player may put in front of this one: well-formed UTF-8 (only the shortest form of each character,
+// no surrogate, nothing above U+10FFFF) with no control character. Refused: C0 (U+0000..U+001F, so no tab or line
+// end), DEL, C1 (U+0080..U+009F) and the bidirectional embedding, override and isolate controls (U+202A..U+202E,
+// U+2066..U+2069), which can make text read in another order than it was written. n may be 0 here; a chat line may not.
+inline bool ChatTextOk(const char* s, size_t n) {
+    const auto* p = reinterpret_cast<const uint8_t*>(s);
+    for (size_t i = 0; i < n;) {
+        const uint8_t lead = p[i];
+        uint32_t cp = 0;
+        size_t more = 0;   // continuation bytes that follow the lead byte
+        if (lead < 0x80) { cp = lead; more = 0; }
+        else if (lead >= 0xC2 && lead <= 0xDF) { cp = lead & 0x1Fu; more = 1; }
+        else if (lead >= 0xE0 && lead <= 0xEF) { cp = lead & 0x0Fu; more = 2; }
+        else if (lead >= 0xF0 && lead <= 0xF4) { cp = lead & 0x07u; more = 3; }
+        else return false;   // a continuation byte alone, C0 and C1 (overlong forms), F5 and above
+        if (more > n - i - 1) return false;   // the character is cut off
+        for (size_t k = 1; k <= more; ++k) {
+            const uint8_t next = p[i + k];
+            if ((next & 0xC0u) != 0x80u) return false;
+            cp = (cp << 6) | (next & 0x3Fu);
+        }
+        if (more == 2 && cp < 0x800) return false;                   // overlong
+        if (more == 3 && (cp < 0x10000 || cp > 0x10FFFF)) return false;   // overlong, or beyond Unicode
+        if (cp >= 0xD800 && cp <= 0xDFFF) return false;             // a surrogate
+        if (cp < 0x20 || (cp >= 0x7F && cp <= 0x9F)) return false;  // C0, DEL, C1
+        if ((cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069)) return false;
+        i += more + 1;
     }
     return true;
 }
@@ -181,6 +234,18 @@ inline size_t EncodeDespawn(uint8_t kind, uint64_t sessionId, uint8_t* buf, size
     return w.ok ? w.n : 0;
 }
 
+// The multiplayer.chat message for `text` (n bytes, no terminator) into buf; its length, or 0 when the text is empty,
+// longer than kMaxChatText bytes or not allowed (ChatTextOk), or buf is too small.
+inline size_t EncodeChat(const char* text, size_t n, uint8_t* buf, size_t cap) {
+    if (!text || n < 1 || n > kMaxChatText || !ChatTextOk(text, n)) return 0;
+    Writer w(buf, cap);
+    w.U8(kChatVersion);
+    w.U8(0);
+    w.U16(static_cast<uint16_t>(n));
+    w.Bytes(text, n);
+    return w.ok ? w.n : 0;
+}
+
 // ---- reading ------------------------------------------------------------------------------------
 
 struct Reader {
@@ -265,5 +330,59 @@ inline bool DecodeDespawn(const void* buf, size_t len, uint64_t sender, uint8_t&
     const uint64_t id = r.U64();
     return r.ok && (kind == kAvatar || kind == kShip) && id == SessionId(sender, kind);
 }
+
+// The line of text in a multiplayer.chat message. The layout, the length against the bytes that follow (a trailing
+// byte is refused) and the text itself (ChatTextOk) are all checked; a message that fails any of it is not read at all.
+inline bool DecodeChat(const void* buf, size_t len, ChatLine& out) {
+    if (!buf || len < kChatHeader + 1 || len > kMaxChat) return false;
+    Reader r(buf, len);
+    out = ChatLine{};
+    if (r.U8() != kChatVersion) return false;
+    if (r.U8() != 0) return false;
+    const size_t n = r.U16();
+    if (n < 1 || n > kMaxChatText || len != kChatHeader + n) return false;
+    r.Bytes(out.text, n);
+    out.text[n] = 0;
+    out.length = n;
+    if (!r.ok || !ChatTextOk(out.text, n)) { out = ChatLine{}; return false; }
+    return true;
+}
+
+// ---- rates --------------------------------------------------------------------------------------
+
+// At most N events in any kChatWindowMs. The caller supplies the clock (milliseconds, never read here), so a test can
+// step time by hand. An event is forgotten once a whole window has passed since it.
+template <unsigned N>
+class RateWindow {
+    static_assert(N > 0, "a window holds at least one event");
+public:
+    // Is there room for one more event at nowMs?
+    bool Room(uint64_t nowMs) {
+        Expire(nowMs);
+        return count_ < N;
+    }
+    // Records an event at nowMs; nothing happens when the window is full.
+    void Add(uint64_t nowMs) {
+        Expire(nowMs);
+        if (count_ >= N) return;
+        stamp_[(first_ + count_) % N] = nowMs;
+        ++count_;
+    }
+    // Room, then Add: false (and nothing recorded) when the window is full.
+    bool Take(uint64_t nowMs) {
+        if (!Room(nowMs)) return false;
+        Add(nowMs);
+        return true;
+    }
+private:
+    void Expire(uint64_t nowMs) {
+        while (count_ && nowMs >= stamp_[first_] && nowMs - stamp_[first_] >= kChatWindowMs) {
+            first_ = (first_ + 1) % N;
+            --count_;
+        }
+    }
+    uint64_t stamp_[N] = {};
+    unsigned first_ = 0, count_ = 0;
+};
 
 }  // namespace mpwire

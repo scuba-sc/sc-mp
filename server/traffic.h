@@ -2,7 +2,7 @@
 #pragma once
 // Counts the datagrams and bytes that cross a pipe, so the stats line can say how much the server
 // sends and receives. The network library's own counters count datagrams only, not bytes.
-#include "server/net_boundary.h"
+#include "net_boundary.h"
 #include <cstddef>
 #include <cstdint>
 

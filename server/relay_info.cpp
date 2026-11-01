@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The relay.info message (server/relay_info.h): writing and reading its bytes.
 // The layout is documented in the header, which is what a client is built against.
-#include "server/relay_info.h"
+#include "relay_info.h"
 
 namespace sco::relay {
 

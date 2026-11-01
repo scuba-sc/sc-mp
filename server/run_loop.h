@@ -14,11 +14,11 @@
 // part (poses sent, held back because the receiver is not near or has been without a position for too
 // long, sent without the receiver's position), and one Warn line follows
 // when position messages were not valid.
-#include "server/config.h"
-#include "server/log.h"
-#include "server/nearby.h"
-#include "server/session.h"
-#include "server/traffic.h"
+#include "config.h"
+#include "log.h"
+#include "nearby.h"
+#include "session.h"
+#include "traffic.h"
 #include <cstdint>
 #include <string>
 
