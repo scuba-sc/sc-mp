@@ -2,9 +2,9 @@
 // RelaySession (server/session.h): the hosted session, the roster of players, the messages the
 // server sends of its own (relay.info, multiplayer.relay) and the hand-off of nearby poses. The
 // relaying itself is done by the network library; this file hosts, watches and announces.
-#include "server/session.h"
-#include "server/relay_info.h"
-#include "plugins/multiplayer/relay_wire.h"
+#include "session.h"
+#include "relay_info.h"
+#include "../plugins/multiplayer/relay_wire.h"
 
 namespace sco::relay {
 namespace mpprotocol=wire::protocol;

@@ -3,8 +3,9 @@
 # from the published sco-core source kit (cmake/ScoCoreSource.cmake, which the root CMakeLists.txt includes when
 # SC_MP_BUILD_RELAY is on) and shares plugins/multiplayer/relay_wire.h with the plugin. Windows and Linux; see README.md.
 #
-# The sources include "server/<name>.h" and "plugins/multiplayer/relay_wire.h", so the include root is the
-# repository root.
+# Production sources include their own headers by basename and the shared wire header by a fixed relative path.
+# The repository root is deliberately not a compiler include directory: otherwise a repository file such as
+# bits/stl_vector.h could shadow a transitive system header while the direct <vector> include still looks safe.
 get_filename_component(SCO_RELAY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 
 # Warnings for the server's own code: -Wall -Wextra, and every warning is an error. The kit's code keeps the kit's
@@ -36,7 +37,6 @@ list(TRANSFORM SCO_RELAY_SERVER_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
 # sco_net and sco_relay_sockets come from cmake/ScoCoreSource.cmake. We never link the kit's service library or its
 # plugin host: they belong to the game plugin host.
 add_library(sco_relay_server STATIC ${SCO_RELAY_SERVER_SOURCES})
-target_include_directories(sco_relay_server PUBLIC "${SCO_RELAY_ROOT}")
 target_link_libraries(sco_relay_server PUBLIC sco_net sco_relay_sockets)
 sco_relay_target_setup(sco_relay_server)
 

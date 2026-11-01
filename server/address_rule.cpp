@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The address rule of the server (server/address_rule.h): reading the extra ranges from the
 // config file and describing the whole rule.
-#include "server/address_rule.h"
-#include "server/log.h"
+#include "address_rule.h"
+#include "log.h"
 #include <utility>
 
 namespace sco::relay {

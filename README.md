@@ -10,9 +10,9 @@ own pace; sc-offline does not ship it.
 ## Status
 
 Development code. **It has not been run in game.** The plugin builds against the sco-core SDK's public
-headers only (pinned to the latest published SDK 2.4.0 release candidate 2,
-[`sdk-v2.4.0-rc.2`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2),
-whose source commit is `844e136ccb280ad8cb43f73bc43c9447e8f6799d`); the headers it needs, such as
+headers only (pinned to the immutable SDK 2.4.0 release,
+[`sdk-v2.4.0`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0),
+from signed source commit `6106fa3639cbcc28f78a1ded8de2707de019f4d3`); the headers it needs, such as
 `sc_private_session.h`, have shipped since SDK 2.2.0. Joining a session needs the
 host to positively admit it as offline. Treat everything here as unverified until a release says
 otherwise.
@@ -31,8 +31,8 @@ The files keep the paths they had in sc-offline, so history and patches carry ov
 ## Build
 
 The repo root is a standalone CMake project. It downloads the published SDK archive `sco-sdk-2.4.0.zip`
-from the latest sco-core release [`sdk-v2.4.0-rc.2`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2)
-(SDK 2.4.0 release candidate 2; the final `sdk-v2.4.0` tag is still pending), refuses it unless its SHA-256 matches the pin in
+from the immutable sco-core release [`sdk-v2.4.0`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0),
+refuses it unless its SHA-256 matches the pin in
 [cmake/ScoSdk.cmake](cmake/ScoSdk.cmake), and builds against the extracted `include/`. It never reads a
 sibling sco-core checkout.
 
@@ -44,7 +44,8 @@ ctest --test-dir build -C Release --output-on-failure
 
 `ctest` runs the module workflow test (`tools/multiplayer_workflow_test.cpp`, synthetic services, no sockets,
 no game) and, on Windows, the SDK's `sco-plugin-check` on the plugin folder. With the default
-`SC_MP_BUILD_RELAY=ON`, Windows and Linux also build the relay server and run its five tests (below).
+`SC_MP_BUILD_RELAY=ON`, Windows and Linux also build the relay server and run its source-level linker-directive
+check. Linux additionally runs the full binary/link-boundary checks listed in `server/README.md`.
 For an offline Windows or Linux build, put the release assets in a directory and pass
 `-DSCO_SDK_ARCHIVE_DIR=<dir>`; the hash is still checked. The directory needs both
 `sco-sdk-<version>.zip` and `sco-sdk-core-source-<version>.zip` (the relay's kit), or pass

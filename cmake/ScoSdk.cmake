@@ -1,8 +1,8 @@
 # Fetches the published sco-core SDK archive, verifies its SHA-256 and extracts it under the build tree.
 #
 #   SCO_SDK_VERSION       SDK version consumed by sc-mp (the archive is sco-sdk-<version>.zip)
-#   SCO_SDK_RELEASE_TAG   the sco-core release that holds the archive. SDK 2.4.0 is published as release
-#                         candidate 2, tag sdk-v2.4.0-rc.2; the final sdk-v2.4.0 has not been published yet
+#   SCO_SDK_RELEASE_TAG   the sco-core release that holds the archive. SDK 2.4.0 is published at
+#                         sdk-v2.4.0; release assets are immutable and source commit 6106fa3 is signed.
 #   SCO_SDK_ARCHIVE_DIR   directory holding a local copy of the release assets (sco-sdk-<version>.zip);
 #                         when set, the archive is taken from there instead of downloaded. Either way
 #                         the archive must match SCO_SDK_SHA256 or configure fails.
@@ -11,11 +11,11 @@
 # never copied into this repository, and no sibling sco-core checkout is read.
 
 set(SCO_SDK_VERSION "2.4.0" CACHE STRING "sco-core SDK version consumed by sc-mp")
-set(SCO_SDK_RELEASE_TAG "sdk-v2.4.0-rc.2" CACHE STRING "sco-core release tag that holds the SDK archives")
+set(SCO_SDK_RELEASE_TAG "sdk-v2.4.0" CACHE STRING "sco-core release tag that holds the SDK archives")
 set(SCO_SDK_ARCHIVE_DIR "" CACHE PATH "Local directory with the release assets of SCO_SDK_RELEASE_TAG (optional)")
-# From the release SHA256SUMS, line for sco-sdk-<version>.zip (sdk-v2.4.0-rc.2 release). Bump together with
+# From the immutable sdk-v2.4.0 release asset digest for sco-sdk-<version>.zip. Bump together with
 # SCO_SDK_VERSION and SCO_SDK_RELEASE_TAG.
-set(SCO_SDK_SHA256 "51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e"
+set(SCO_SDK_SHA256 "0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc"
     CACHE STRING "SHA-256 of sco-sdk-<version>.zip")
 
 set(_sco_sdk_name "sco-sdk-${SCO_SDK_VERSION}")
