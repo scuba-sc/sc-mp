@@ -7,7 +7,7 @@ graph, starts and publishes the existing typed mock provider, and finishes
 startup. The adapter adds no table slot or production worker and does not load a
 plugin, use a socket, or access a game. The separate maintenance test fixture
 starts its own owned worker. The core input is the separately extracted source kit
-at commit `4aef497723a99a6bb5e19c65f4b9ecf65d30cf19` (#315 HOLD); the literal
+at commit `e4ba511c5be0f1f901e1ca958a1fd28839e30fdc` (#315 HOLD); the literal
 inventory hash is checked before CMake adds that source tree.
 
 The trusted host supplies a nonzero opaque 128-bit session namespace. Its
@@ -100,7 +100,7 @@ core API's scheduling, mutex acquisition or joining.
 For repeatable offline qualification, first package the exact clean core
 candidate above with its `sdk/package.py --profile core-source`. The expected
 archive SHA-256 is
-`b4aa9ab7f10f488910334f8e5a64668ac540d2ad2d1b18ed18e0648e84a747ff`.
+`cd81ed6beeb079da967fff9a9cab751d76111b9325b9505f13fdc11a0da3cc52`.
 Then run:
 
 ```sh

@@ -9,7 +9,7 @@ if(NOT SDK_ROOT OR NOT EXISTS "${SDK_ROOT}/SHA256SUMS")
   message(FATAL_ERROR "SDK_ROOT must point to the checked core-source kit")
 endif()
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/VerifyExtractedKit.cmake")
-sc_mp_verify_extracted_kit("${SDK_ROOT}" "4d33063a5822a1c2941773c3246c8614a68241fc7efdd488cfbe0d7c70a2f70c" "host-context core kit")
+sc_mp_verify_extracted_kit("${SDK_ROOT}" "2be34eead40fa43d6bb237541391b5d7f49c25ae6c1199aa22fefac35f069a9f" "host-context core kit")
 add_subdirectory("${SDK_ROOT}" sdk EXCLUDE_FROM_ALL)
 # Test-only observation of the real core retirement wait. It changes no
 # admission, provenance, or retirement behavior and supplies no callback.
