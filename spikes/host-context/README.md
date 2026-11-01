@@ -4,9 +4,10 @@ This is a trusted-host, in-process synthetic adapter, not a plugin service or an
 approved SDK ABI. The one runner links the real `sco_authority` into its main
 executable. It creates the executable authority, binds, reserves an empty mock
 graph, starts and publishes the existing typed mock provider, and finishes
-startup. It does not add a table slot, start a worker, load a plugin, use a
-socket, or access a game. The core input is the separately extracted source kit
-at commit `0bac7b79729671d3a98a6adb27c2f3e7fd061605` (#305 HOLD); the literal
+startup. The adapter adds no table slot or production worker and does not load a
+plugin, use a socket, or access a game. The separate maintenance test fixture
+starts its own owned worker. The core input is the separately extracted source kit
+at commit `4aef497723a99a6bb5e19c65f4b9ecf65d30cf19` (#315 HOLD); the literal
 inventory hash is checked before CMake adds that source tree.
 
 The trusted host supplies a nonzero opaque 128-bit session namespace. Its
@@ -74,7 +75,7 @@ negative control must fail this rendezvous. `leave-during-copy` invalidates the
 current context and refuses fresh reads while a previously captured old copy
 completes successfully. That leave-only case does not by itself prove pin lifetime.
 
-Ten separate CTest scenarios also include `output-contract`, `output-overflow`,
+Eleven separate CTest scenarios also include `output-contract`, `output-overflow`,
 `coherence` and `replace-during-copy`. The output tests use physically extended objects and compare
 complete byte snapshots on errors; successful operations check both advertised
 and additional guard bytes. Coherence runs 128 replacements with one test caller,
@@ -85,10 +86,21 @@ generation, then verifies that the admitted read returns its independent older
 snapshot while fresh reads see the replacement. An old expected generation is
 subsequently refused without changing the caller output.
 
+`owned-maintenance` separately exercises the candidate's real host-source
+`sco::OwnedShutdown` API. Its fixture-owned worker is held through its body and
+TLS destruction: a failed drain remains closed, maintenance reports pending
+until the worker and TLS complete, and then reports `ReapedRetained` without
+restoring readiness or admission. It also checks fresh, successful-drain and
+worker self-reentry refusals. Its three owners remain process-rooted. This is a
+companion fixture: it does not reap or control the adapter's separate reserved
+session, and it creates no production adapter worker or provider slot. Timing
+deadlines bound waits but do not establish a hard wall-clock bound for the
+core API's scheduling, mutex acquisition or joining.
+
 For repeatable offline qualification, first package the exact clean core
 candidate above with its `sdk/package.py --profile core-source`. The expected
 archive SHA-256 is
-`97dff84630beb13966d44c4865ef8c06e5f4a2116e755ef7d935a4b4cf48d503`.
+`b4aa9ab7f10f488910334f8e5a64668ac540d2ad2d1b18ed18e0648e84a747ff`.
 Then run:
 
 ```sh

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "context.h"
+#include "sco/owned_shutdown.h"
 #include <array>
 #include <chrono>
 #include <cstring>
@@ -309,6 +310,100 @@ void LeaveDuringCopy(Adapter& a) {
     Check(Stop(a, std::chrono::steady_clock::now() + std::chrono::seconds(2)) == sco::reserved::RetireResult::QuiescedRetained, "leave copy stop");
     std::cout << "leave during copy: new reads unavailable, captured generation 1 completed\n";
 }
+bool WaitFlag(const std::atomic<bool>& flag, std::chrono::steady_clock::time_point deadline) {
+    while (!flag.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    return flag.load(std::memory_order_acquire);
+}
+void OwnedMaintenance(Adapter& a) {
+    // Separate real host-source owner: it is not the adapter's reserved Session.
+    using Owner = sco::OwnedShutdown;
+    using Reap = Owner::ReapResult;
+    using namespace std::chrono_literals;
+    Generation generation;
+    Check(Replace(a, Correlated(1), &generation) == Result::Ok, "companion adapter setup");
+    static auto* pending = new Owner;
+    Check(pending->reap_retained_until(std::chrono::steady_clock::now() + 2s) == Reap::Refused,
+          "fresh maintenance refused");
+    { auto read = pending->try_read(); Check(static_cast<bool>(read), "fresh owner remains open"); }
+    std::atomic<bool> bodyEntered{false}, bodyRelease{false};
+    std::atomic<bool> tlsEntered{false}, tlsRelease{false}, tlsDestroyed{false};
+    struct Tail {
+        std::atomic<bool>* entered;
+        std::atomic<bool>* release;
+        std::atomic<bool>* destroyed;
+        ~Tail() {
+            entered->store(true, std::memory_order_release);
+            while (!release->load(std::memory_order_acquire)) std::this_thread::yield();
+            destroyed->store(true, std::memory_order_release);
+        }
+    };
+    const bool started = pending->start_worker([&](const auto&) {
+        thread_local Tail tail{&tlsEntered, &tlsRelease, &tlsDestroyed};
+        (void)tail;
+        bodyEntered.store(true, std::memory_order_release);
+        while (!bodyRelease.load(std::memory_order_acquire)) std::this_thread::yield();
+    });
+    Check(started, "companion fixture worker started");
+    if (!WaitFlag(bodyEntered, std::chrono::steady_clock::now() + 2s)) {
+        bodyRelease.store(true, std::memory_order_release);
+        tlsRelease.store(true, std::memory_order_release);
+        (void)pending->drain_until(std::chrono::steady_clock::now() + 2s);
+        Check(false, "companion worker entered");
+    }
+    const bool failedDrain = !pending->drain_until(std::chrono::steady_clock::now() + 50ms);
+    const auto bodyPending = pending->reap_retained_until(std::chrono::steady_clock::now() + 50ms);
+    const bool closedAfterFailure = pending->closed() && !pending->ready() && !pending->try_read();
+    Context separate;
+    const auto separateRead = ReadExpected(a, 1, &separate);
+    bodyRelease.store(true, std::memory_order_release);
+    if (!WaitFlag(tlsEntered, std::chrono::steady_clock::now() + 2s)) {
+        tlsRelease.store(true, std::memory_order_release);
+        (void)pending->reap_retained_until(std::chrono::steady_clock::now() + 2s);
+        Check(false, "companion worker TLS entered");
+    }
+    const auto tlsPending = pending->reap_retained_until(std::chrono::steady_clock::now() + 50ms);
+    const bool tlsStillAlive = !tlsDestroyed.load(std::memory_order_acquire);
+    tlsRelease.store(true, std::memory_order_release);
+    const auto reaped = pending->reap_retained_until(std::chrono::steady_clock::now() + 2s);
+    const bool stayedClosed = pending->closed() && !pending->ready() && !pending->try_read();
+    const bool noRestart = !pending->start_worker([](const auto&) {});
+    const bool noSecondDrain = !pending->drain_until(std::chrono::steady_clock::now() + 2s);
+    const auto repeatReap = pending->reap_retained_until(std::chrono::steady_clock::now() + 2s);
+    Check(failedDrain && bodyPending == Reap::PendingRetained && closedAfterFailure,
+          "failed drain and held worker remain retained");
+    Check(separateRead == Result::Ok && separate.generation == 1 && Coherent(separate),
+          "companion failure does not alter separate adapter session");
+    Check(tlsPending == Reap::PendingRetained && tlsStillAlive, "TLS must exit before real join");
+    Check(reaped == Reap::ReapedRetained && tlsDestroyed.load(std::memory_order_acquire),
+          "maintenance joins worker and TLS");
+    Check(stayedClosed && noRestart && noSecondDrain && repeatReap == Reap::ReapedRetained,
+          "maintenance never reopens or retires failed owner");
+
+    static auto* self = new Owner;
+    std::atomic<bool> selfDone{false}, selfRefused{false};
+    Check(self->start_worker([&](const auto&) {
+        const bool drainRefused = !self->drain_until(std::chrono::steady_clock::now() + 2s);
+        const auto maintenance = self->reap_retained_until(std::chrono::steady_clock::now() + 2s);
+        selfRefused.store(drainRefused && maintenance == Reap::Refused, std::memory_order_release);
+        selfDone.store(true, std::memory_order_release);
+    }), "self-reentry fixture worker started");
+    Check(WaitFlag(selfDone, std::chrono::steady_clock::now() + 2s), "self-reentry fixture completed");
+    const auto selfReaped = self->reap_retained_until(std::chrono::steady_clock::now() + 2s);
+    Check(selfRefused.load(std::memory_order_acquire) && selfReaped == Reap::ReapedRetained &&
+          self->closed() && !self->ready() && !self->try_read(), "worker self-drain and self-maintenance refused");
+
+    static auto* completed = new Owner;
+    Check(completed->drain_until(std::chrono::steady_clock::now() + 2s) && completed->ready(),
+          "companion successful drain");
+    Check(completed->reap_retained_until(std::chrono::steady_clock::now() + 2s) == Reap::Refused &&
+          completed->ready(), "maintenance refused after successful drain");
+    Context final;
+    Check(ReadExpected(a, 1, &final) == Result::Ok && Coherent(final), "separate adapter remains running");
+    Check(Stop(a, std::chrono::steady_clock::now() + 2s) == sco::reserved::RetireResult::QuiescedRetained,
+          "adapter stops separately");
+    std::cout << "companion OwnedShutdown: retained maintenance reaps worker/TLS without reopening; adapter separate\n";
+}
 void Concurrent(Adapter& a) {
     Generation g; Check(Replace(a, Correlated(1), &g) == Result::Ok && g.value == 1, "concurrent setup");
     std::atomic<bool> done{false}; std::atomic<uint64_t> reads{0};
@@ -365,12 +460,13 @@ void Drain(Adapter& a, bool immediate) {
 }
 }
 int main(int argc, char** argv) {
-    if (argc != 2) { std::cerr << "usage: host-context basic|overflow|drain|drain-now|output-contract|output-overflow|coherence|replace-during-copy|success-drain|leave-during-copy\n"; return 2; }
+    if (argc != 2) { std::cerr << "usage: host-context basic|overflow|drain|drain-now|output-contract|output-overflow|coherence|replace-during-copy|success-drain|leave-during-copy|owned-maintenance\n"; return 2; }
     auto* a = Start({0x11, 0x22}); Check(a != nullptr, "real executable authority startup");
     const std::string_view mode(argv[1]);
     if (mode == "basic") Basic(*a); else if (mode == "overflow") Overflow(*a);
     else if (mode == "output-contract") OutputContract(*a); else if (mode == "output-overflow") OutputOverflow(*a);
     else if (mode == "coherence") Concurrent(*a); else if (mode == "replace-during-copy") ReplaceDuringCopy(*a);
     else if (mode == "success-drain") SuccessDrain(*a); else if (mode == "leave-during-copy") LeaveDuringCopy(*a);
+    else if (mode == "owned-maintenance") OwnedMaintenance(*a);
     else if (mode == "drain") Drain(*a, false); else if (mode == "drain-now") Drain(*a, true); else return 2;
 }

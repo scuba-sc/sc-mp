@@ -1,0 +1,51 @@
+name: host-context
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out sc-mp
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check out held core candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: scuba-sc/sco-core
+          ref: 4aef497723a99a6bb5e19c65f4b9ecf65d30cf19
+          path: _host_context_core_candidate
+          persist-credentials: false
+      - name: Package and qualify exact core source
+        shell: bash
+        run: |
+          set -euo pipefail
+          core="$GITHUB_WORKSPACE/_host_context_core_candidate"
+          evidence="$RUNNER_TEMP/host-context"
+          test "$(git -C "$core" rev-parse HEAD)" = 4aef497723a99a6bb5e19c65f4b9ecf65d30cf19
+          mkdir -p "$evidence/archives"
+          CLANG="$(command -v clang-18)" python3 "$core/sdk/package.py" --profile core-source --out "$evidence/archives"
+          archive="$evidence/archives/sco-sdk-core-source-2.4.0.zip"
+          printf '%s  %s\n' b4aa9ab7f10f488910334f8e5a64668ac540d2ad2d1b18ed18e0648e84a747ff "$archive" | sha256sum --check
+          for mode in release asan; do
+            options=()
+            if [ "$mode" = asan ]; then options+=(--sanitize); fi
+            if ! python3 spikes/host-context/qualify.py --core-archive "$archive" \
+                 --output "$evidence/$mode" --cmake "$(command -v cmake)" \
+                 --cc "$(command -v clang-18)" --cxx "$(command -v clang++-18)" "${options[@]}"; then
+              for log in "$evidence/$mode"/*.log "$evidence/$mode"/receipt.json; do
+                if [ -f "$log" ]; then printf '\n--- %s ---\n' "$log"; cat "$log"; fi
+              done
+              exit 1
+            fi
+            cat "$evidence/$mode/verifier-tests.log" "$evidence/$mode/ctest.log" "$evidence/$mode/receipt.json"
+          done

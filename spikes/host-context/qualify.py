@@ -15,18 +15,18 @@ import sys
 import xml.etree.ElementTree as ET
 import zipfile
 
-CORE = "0bac7b79729671d3a98a6adb27c2f3e7fd061605"
-ARCHIVE = "97dff84630beb13966d44c4865ef8c06e5f4a2116e755ef7d935a4b4cf48d503"
-INVENTORY = "cd9208fa2b122ea353ef8f2316f9e77cd87b28047b4e01617285adee9d7d54ba"
+CORE = "4aef497723a99a6bb5e19c65f4b9ecf65d30cf19"
+ARCHIVE = "b4aa9ab7f10f488910334f8e5a64668ac540d2ad2d1b18ed18e0648e84a747ff"
+INVENTORY = "4d33063a5822a1c2941773c3246c8614a68241fc7efdd488cfbe0d7c70a2f70c"
 HELPER = "18146a218b6e0ecb8d01fd972fe004285363ecefcdd59b05cf1899433bf02e3d"
 VERIFIER = "594d539d996306ad560d44efe7bea1f8c1de99b6682e2fa563d6cd52827bf9aa"
-VERIFIER_TESTS = "fe9afdfba6de9995182be04378dac0d9409a7a9443130d814b00665a68c2b0ac"
+VERIFIER_TESTS = "5ce2f3b6a998063dc738544a314c89ad04ce38b9ac250095643e4e08096afbdb"
 VERIFIER_DOC = "28730643e9a4657ed3db26c8187646f41f603aafbcdd5b4278097afdd775fdb5"
 PREFIX = "sco-sdk-core-source-2.4.0"
 FILES = ("CMakeLists.txt", "context.h", "context.cpp", "main.cpp", "README.md", "qualify.py")
 TESTS = {"host-context-" + name for name in
          ("basic", "overflow", "drain", "drain-now", "output-contract", "output-overflow",
-          "coherence", "replace-during-copy", "success-drain", "leave-during-copy")}
+          "coherence", "replace-during-copy", "success-drain", "leave-during-copy", "owned-maintenance")}
 
 
 def digest(path):

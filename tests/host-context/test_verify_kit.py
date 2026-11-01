@@ -59,9 +59,9 @@ class ArchiveChecks(unittest.TestCase):
         return archive
 
     def test_literal_production_pins(self):
-        self.assertEqual(q.CORE, '0bac7b79729671d3a98a6adb27c2f3e7fd061605')
-        self.assertEqual(q.ARCHIVE, '97dff84630beb13966d44c4865ef8c06e5f4a2116e755ef7d935a4b4cf48d503')
-        self.assertEqual(q.INVENTORY, 'cd9208fa2b122ea353ef8f2316f9e77cd87b28047b4e01617285adee9d7d54ba')
+        self.assertEqual(q.CORE, '4aef497723a99a6bb5e19c65f4b9ecf65d30cf19')
+        self.assertEqual(q.ARCHIVE, 'b4aa9ab7f10f488910334f8e5a64668ac540d2ad2d1b18ed18e0648e84a747ff')
+        self.assertEqual(q.INVENTORY, '4d33063a5822a1c2941773c3246c8614a68241fc7efdd488cfbe0d7c70a2f70c')
 
     def test_too_many_entries_refused_before_extraction(self):
         extra = [entry(q.PREFIX + '/extra-' + str(i), b'') for i in range(2047)]

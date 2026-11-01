@@ -9,7 +9,7 @@ if(NOT SDK_ROOT OR NOT EXISTS "${SDK_ROOT}/SHA256SUMS")
   message(FATAL_ERROR "SDK_ROOT must point to the checked core-source kit")
 endif()
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/VerifyExtractedKit.cmake")
-sc_mp_verify_extracted_kit("${SDK_ROOT}" "cd9208fa2b122ea353ef8f2316f9e77cd87b28047b4e01617285adee9d7d54ba" "host-context core kit")
+sc_mp_verify_extracted_kit("${SDK_ROOT}" "4d33063a5822a1c2941773c3246c8614a68241fc7efdd488cfbe0d7c70a2f70c" "host-context core kit")
 add_subdirectory("${SDK_ROOT}" sdk EXCLUDE_FROM_ALL)
 # Test-only observation of the real core retirement wait. It changes no
 # admission, provenance, or retirement behavior and supplies no callback.
@@ -21,7 +21,7 @@ target_compile_definitions(host-context PRIVATE HOST_CONTEXT_TESTING=1 SCO_RESER
 target_compile_options(host-context PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(host-context PRIVATE sco_authority)
 enable_testing()
-foreach(scenario basic overflow drain drain-now output-contract output-overflow coherence replace-during-copy success-drain leave-during-copy)
+foreach(scenario basic overflow drain drain-now output-contract output-overflow coherence replace-during-copy success-drain leave-during-copy owned-maintenance)
   add_test(NAME host-context-${scenario} COMMAND host-context ${scenario})
   set_tests_properties(host-context-${scenario} PROPERTIES TIMEOUT 15)
 endforeach()
