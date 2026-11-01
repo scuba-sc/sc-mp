@@ -7,7 +7,7 @@ graph, starts and publishes the existing typed mock provider, and finishes
 startup. The adapter adds no table slot or production worker and does not load a
 plugin, use a socket, or access a game. The separate maintenance test fixture
 starts its own owned worker. The core input is the separately extracted source kit
-at commit `44ffd1290e261e12684b38ac862ec0c4f08921df` (merged #315); the literal
+at commit `6106fa3639cbcc28f78a1ded8de2707de019f4d3` (the published sdk-v2.4.0 release); the literal
 inventory hash is checked before CMake adds that source tree.
 
 The trusted host supplies a nonzero opaque 128-bit session namespace. Its
@@ -64,7 +64,7 @@ output. This is a test caller, not an adapter worker. Each CTest entry starts a 
 process because the reservation is terminal. The test-only barrier and seed are
 local to this runner; core is built without `SCO_RESERVED_SESSION_TESTING`.
 
-The current candidate supplies `SCO_RESERVED_DRAIN_TESTING`, enabled only for
+The stable source kit supplies `SCO_RESERVED_DRAIN_TESTING`, enabled only for
 the test authority and runner. Its monotonic `ReaderDrainObserved()` means an
 actual retire call saw Closing with admitted readers while holding the core lock.
 It neither reports quiescence nor authorizes cleanup, and installs no callback.
@@ -86,7 +86,7 @@ generation, then verifies that the admitted read returns its independent older
 snapshot while fresh reads see the replacement. An old expected generation is
 subsequently refused without changing the caller output.
 
-`owned-maintenance` separately exercises the candidate's real host-source
+`owned-maintenance` separately exercises the kit's real host-source
 `sco::OwnedShutdown` API. Its fixture-owned worker is held through its body and
 TLS destruction: a failed drain remains closed, maintenance reports pending
 until the worker and TLS complete, and then reports `ReapedRetained` without
@@ -97,10 +97,9 @@ session, and it creates no production adapter worker or provider slot. Timing
 deadlines bound waits but do not establish a hard wall-clock bound for the
 core API's scheduling, mutex acquisition or joining.
 
-For repeatable offline qualification, first package the exact clean core
-candidate above with its `sdk/package.py --profile core-source`. The expected
+For repeatable offline qualification, use the published core-source archive from `sdk-v2.4.0`. The expected
 archive SHA-256 is
-`807a322eab2b3d8c25e10c3582008ec3ec50b6b536bc947f2b28cf4b63095c22`.
+`df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51`.
 Then run:
 
 ```sh

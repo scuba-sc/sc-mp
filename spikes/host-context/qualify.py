@@ -15,13 +15,13 @@ import sys
 import xml.etree.ElementTree as ET
 import zipfile
 
-CORE = "44ffd1290e261e12684b38ac862ec0c4f08921df"
-ARCHIVE = "807a322eab2b3d8c25e10c3582008ec3ec50b6b536bc947f2b28cf4b63095c22"
-INVENTORY = "812d09236dc952309d3f1c63a843f6ff0407f6465066c4bd7d068b123d3b503c"
+CORE = "6106fa3639cbcc28f78a1ded8de2707de019f4d3"
+ARCHIVE = "df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51"
+INVENTORY = "0731afbc8632996990179950e60e03c2e9f1d263bf9f6d96f483875a7de73d78"
 HELPER = "ece58eff511fb1b5bef24784d98e0027be5f42d810a02eb7975f9dceec2581e9"
 VERIFIER = "594d539d996306ad560d44efe7bea1f8c1de99b6682e2fa563d6cd52827bf9aa"
-VERIFIER_TESTS = "1c70e69bd5617179325da6b0b062339624d0c7d53a4c26cd3c3efafdaeb2a3fe"
-VERIFIER_DOC = "7562d3567664728ad3e48abf83d431981119fa2609c38c8d3b36420a660ebe70"
+VERIFIER_TESTS = "6936721c5b7693657e60c7f272918913a3772789dfaaa65041a670d80e28d049"
+VERIFIER_DOC = "3684dc96d06f8926b95150481c3308246297c6aaf5a70a99a04fd72c59f591e2"
 PREFIX = "sco-sdk-core-source-2.4.0"
 FILES = ("CMakeLists.txt", "context.h", "context.cpp", "main.cpp", "README.md", "qualify.py")
 TESTS = {"host-context-" + name for name in
@@ -104,7 +104,7 @@ def main():
         ap.error("output already exists; choose a fresh evidence directory")
     out.mkdir(parents=True)
     source = Path(__file__).resolve().parent
-    receipt = {"core_candidate": CORE, "candidate_status": "RC3 candidate; experimental host-source only",
+    receipt = {"core_candidate": CORE, "candidate_status": "SDK 2.4.0 stable release; experimental host-source only",
                "archive_sha256_expected": ARCHIVE, "inventory_sha256_expected": INVENTORY,
                "qualified": False, "stages": [], "sanitized": args.sanitize}
     env = os.environ.copy()

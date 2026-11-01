@@ -18,7 +18,7 @@ special files, or a file type inconsistent with the trailing slash. Explicit
 directory entries with matching metadata are permitted. A ZIP entry with no
 Unix mode is accepted based on its name; the verifier does not attest all ZIP
 metadata, permissions, timestamps, ownership or compressed contents' origin.
-The candidate's literal archive and inventory hashes remain in the qualifier;
+The stable release archive and inventory hashes remain in the qualifier;
 test fixture-specific pins are injected only into the imported test process.
 
 The verifier and its tests were newly written for this isolated experiment after
@@ -26,11 +26,11 @@ reviewing the earlier `cmake/VerifyExtractedKit.cmake` from sc-mp commit
 `86b8169095b3dea703dbf281b4596cf4a1e92c89` and the host-context qualifier at
 `deaf7c4b2abf58083d65131734799ad23a43a832`. They are informed by that prior
 work; this is not a claim of independent creation or a resolution of the
-underlying rights questions. The coordinated core candidate is merged to main
-and labeled `sdk-v2.4.0-rc.3`; candidate qualification does not establish final
-release promotion or native host-context support.
+underlying rights questions. The core-source input is the published `sdk-v2.4.0` release at commit
+`6106fa3639cbcc28f78a1ded8de2707de019f4d3`; this fixture does not establish
+native host-context support.
 
-Run the checks against the exact reviewed candidate archive:
+Run the checks against the exact published release archive:
 
 ```sh
 python3 tests/host-context/test_verify_kit.py --cmake /path/to/cmake \
