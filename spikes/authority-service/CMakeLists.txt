@@ -9,7 +9,7 @@ if(NOT SDK_ROOT OR NOT EXISTS "${SDK_ROOT}/CMakeLists.txt" OR NOT EXISTS "${SDK_
  message(FATAL_ERROR "SDK_ROOT must point to the checked, extracted core-source kit")
 endif()
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/VerifyExtractedKit.cmake")
-sc_mp_verify_extracted_kit("${SDK_ROOT}" "908bd2674577dc435fce4bbf97c2cbbb75637ccba00de9375dafd3949cb09d0a" "authority service fixture")
+sc_mp_verify_extracted_kit("${SDK_ROOT}" "0731afbc8632996990179950e60e03c2e9f1d263bf9f6d96f483875a7de73d78" "authority service fixture")
 add_subdirectory("${SDK_ROOT}" sdk EXCLUDE_FROM_ALL)
 add_executable(authority-service main.cpp plugin.cpp)
 target_link_libraries(authority-service PRIVATE sco_app)
