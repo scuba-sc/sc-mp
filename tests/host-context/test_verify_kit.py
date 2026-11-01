@@ -58,10 +58,10 @@ class ArchiveChecks(unittest.TestCase):
         q.INVENTORY = sha(inventory)
         return archive
 
-    def test_literal_production_pins(self):
-        self.assertEqual(q.CORE, '4c09ab2f73caa3d1103214adc56193d2434a8795')
-        self.assertEqual(q.ARCHIVE, '19e80a7d1661475a86aaed80d1827cec8c5e4868d990bca27b089ff8e6d5ed07')
-        self.assertEqual(q.INVENTORY, '2206c288af7997a138156485cc75b33613102af28feaf99621f2d99d305658b8')
+    def test_literal_candidate_pins(self):
+        self.assertEqual(q.CORE, '44ffd1290e261e12684b38ac862ec0c4f08921df')
+        self.assertEqual(q.ARCHIVE, '807a322eab2b3d8c25e10c3582008ec3ec50b6b536bc947f2b28cf4b63095c22')
+        self.assertEqual(q.INVENTORY, '812d09236dc952309d3f1c63a843f6ff0407f6465066c4bd7d068b123d3b503c')
 
     def test_too_many_entries_refused_before_extraction(self):
         extra = [entry(q.PREFIX + '/extra-' + str(i), b'') for i in range(2047)]
