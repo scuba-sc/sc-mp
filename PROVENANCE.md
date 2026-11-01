@@ -25,9 +25,11 @@ Code from anyone other than the maintainer is recorded here when it lands, under
 
 The maintainer selected GPL-3.0-only contribution checks while preserving
 contributor credit. This does not establish the rights or historical terms of
-prior submissions. For the project-authored changes under review, the maintainer
-reports that authority to contribute under GPL-3.0-only and any employer or
-third-party ownership exceptions are unknown. The maintainer reports no other
-source or permission records for the copied relay work beyond the submitters'
-statements. Rights and the adequacy of those statements remain unresolved.
+prior submissions. On 2026-11-01, the maintainer confirmed they may contribute
+newly generated project code and documentation under GPL-3.0-only without an
+employer or client restriction. This is the maintainer's statement, not an
+independent legal determination; it does not certify the older copied relay
+material. The maintainer reports no other source or permission records for that
+material beyond the submitters' statements. Its rights and the adequacy of those
+statements remain unresolved.
 "Pending" means the maintainer has not yet reviewed the row.

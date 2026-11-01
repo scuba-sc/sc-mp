@@ -5,8 +5,8 @@ and the home of its player-run relay server. Read [README.md](README.md) first.
 Released sc-mp builds consume the published sco-core SDK. For coordinated
 development and review, a build may instead use a current, reviewed, unreleased
 sco-core candidate selected in coordination with the core owner, with the exact
-source revision and artifact hashes recorded. A held candidate remains held; a development
-check does not approve its merge or release. Transition to a published stable SDK
+source revision and artifact hashes recorded. A held candidate remains held; a
+development check does not approve its merge or release. Transition to a published stable SDK
 is a separate deliberate step.
 
 sc-mp's own code is GPL-3.0-only; the contribution checks below follow the project's
@@ -64,7 +64,8 @@ do not read an arbitrary sibling checkout or copy SDK sources into this reposito
 3. **No unauthenticated remote commands between peers.** Traffic is authenticated but plaintext
    ([net-wire.md, "Known limits"](https://github.com/scuba-sc/sco-core/blob/main/docs/net-wire.md)); players
    use a VPN for confidentiality.
-4. **Public SDK surface only.** Use documented SDK headers and interfaces from the published archive, or from an exactly pinned reviewed candidate kit for coordinated development as described above.
+4. **Public SDK surface only.** Use documented SDK headers and interfaces from the published archive, or from an
+   exactly pinned reviewed candidate kit for coordinated development as described above.
 5. **A relay is never a player.** Its roster message (`multiplayer.relay`) says so; the plugin does not list it
    as a player.
 6. **Evidence.** A green CI run is a build and a synthetic test. Write "not run in game" unless a recorded
