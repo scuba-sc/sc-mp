@@ -41,5 +41,8 @@ its intended validation path. The direct-CMake fixtures place a sentinel in the
 candidate's `CMakeLists.txt` and require all refusals to happen before it runs.
 The qualifier snapshots and pins this test source and both verifier files,
 runs the tests before extraction, and rechecks the kit and source after the
-build. These tests do not validate arbitrary concurrent changes or plugin/game
-behavior.
+build. The runner requires exactly 21 executed test methods, with no skips or
+expected failures. Qualification currently targets Linux/POSIX: the FIFO and
+symlink cases require platform support and permissions. If a case cannot run,
+qualification fails rather than treating a skip as a pass. These tests do not
+validate arbitrary concurrent changes or plugin/game behavior.

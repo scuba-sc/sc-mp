@@ -114,7 +114,9 @@ allowed. The qualifier checks archive entry type and path consistency before
 extraction; see [the verifier tests](../../tests/host-context/README.md) for
 exact bounds and metadata coverage. Qualification assumes private, stable
 output and inputs; it does not defend against hostile concurrent tree mutation
-or establish artifact origin. The newly written verifier and tests were informed
+or establish artifact origin. Qualification currently targets Linux/POSIX; all
+21 verifier tests must execute without skips, including FIFO and symlink cases.
+The newly written verifier and tests were informed
 by the earlier `cmake/VerifyExtractedKit.cmake` from commit
 `86b8169095b3dea703dbf281b4596cf4a1e92c89` and the previous qualifier; this is
 neither a clean-room claim nor a determination of underlying contribution rights.

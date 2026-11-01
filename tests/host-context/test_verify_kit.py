@@ -21,6 +21,7 @@ q = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(q)
 CMAKE = 'cmake'
 REAL_ARCHIVE = None
+EXPECTED_TESTS = 21
 
 
 def sha(data):
@@ -256,10 +257,23 @@ class ExtractedTreeChecks(unittest.TestCase):
                 self.assert_rejected()
 
 
+def complete(result):
+    return (result.testsRun == EXPECTED_TESTS and not result.skipped and
+            not result.expectedFailures and result.wasSuccessful())
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cmake', required=True)
     parser.add_argument('--real-archive', required=True, type=Path)
     args = parser.parse_args()
     CMAKE, REAL_ARCHIVE = args.cmake, args.real_archive
-    unittest.main(argv=[sys.argv[0]], verbosity=2)
+    suite = unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])
+    if suite.countTestCases() != EXPECTED_TESTS:
+        print('expected exactly 21 verifier tests', file=sys.stderr)
+        raise SystemExit(1)
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    if not complete(result):
+        print('verifier qualification requires 21 executed tests and zero skips or expected failures',
+              file=sys.stderr)
+        raise SystemExit(1)
