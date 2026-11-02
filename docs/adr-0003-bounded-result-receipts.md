@@ -1,6 +1,9 @@
 # ADR 0003 — bounded application result experiment
 
-Status: PARTIAL, scratch-only tested increment; not production readiness or owner integration approval.
+Status: HISTORICAL PARTIAL, scratch-only tested increment; not production
+readiness or owner integration approval. The parent tree, RC2 pins, tests, and
+limits below describe the 2026-10-30 experiment and are not the current sc-mp
+integration or released SDK receipt.
 
 Parent: `<LOCAL_HOME>/.hermes/cache/scratch/sc-mp-authority-sdk-20261030/sc-mp`, main `57ac2fd3e6fd3e23a974d58c33fbd4935b9d12f0` plus its uncommitted authority experiment. Exact parent file SHA256s: new root `evidence/parent-hashes.json`. New additive root `<LOCAL_HOME>/.hermes/cache/scratch/sc-mp-authority-receipts-20261030`. Original remains unchanged. SDK rc2 source `844e136ccb280ad8cb43f73bc43c9447e8f6799d`, published core archive SHA256 `ddd1d75055f6b0efd69af4ac2eff6a18a5ff177f87cb28c938af3a625befbbb8`; linked directly from parent's verified extraction, not sco-core checkout. SDK authentication and reliable transport unchanged; PBKDF2 iterations2 test-only.
 
