@@ -6,7 +6,7 @@
 // new takes the slot, so a message for an earlier occupant can be told apart from one for the present
 // one (plugins/multiplayer/relay_wire.h). Peer numbers are never reused; slots are, and that is the reason for the
 // generation.
-#include "server/net_boundary.h"
+#include "net_boundary.h"
 #include <cstdint>
 #include <map>
 #include <string>

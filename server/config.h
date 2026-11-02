@@ -16,8 +16,8 @@
 // Only settings that change what a running server does are listed. The password stretching count
 // (PBKDF2) is not one of them: players cannot change it, so the server must not either; it stays
 // at the protocol's value.
-#include "server/log.h"
-#include "server/net_boundary.h"
+#include "log.h"
+#include "net_boundary.h"
 #include <cstdint>
 #include <string>
 #include <string_view>

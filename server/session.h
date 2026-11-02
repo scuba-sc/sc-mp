@@ -19,12 +19,12 @@
 //
 // Players are not counted by a constant: the limit comes from Settings::maxPlayers. The session
 // itself takes peer 1 of the library's places, so the library gets maxPlayers + 1.
-#include "server/config.h"
-#include "server/log.h"
-#include "server/nearby.h"
-#include "server/net_boundary.h"
-#include "server/roster.h"
-#include "server/traffic.h"
+#include "config.h"
+#include "log.h"
+#include "nearby.h"
+#include "net_boundary.h"
+#include "roster.h"
+#include "traffic.h"
 #include <cstdint>
 #include <string>
 #include <string_view>

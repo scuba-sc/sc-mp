@@ -23,8 +23,8 @@ if(NOT DEFINED SCO_SDK_VERSION)
                       "configure with SC_MP_FETCH_SDK=ON, or leave SC_MP_BUILD_RELAY off")
 endif()
 
-# From the release SHA256SUMS, line for sco-sdk-core-source-<version>.zip (sdk-v2.4.0-rc.2 release).
-set(SCO_CORE_SOURCE_SHA256 "ddd1d75055f6b0efd69af4ac2eff6a18a5ff177f87cb28c938af3a625befbbb8"
+# From the immutable sdk-v2.4.0 release asset digest for sco-sdk-core-source-<version>.zip.
+set(SCO_CORE_SOURCE_SHA256 "df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51"
     CACHE STRING "SHA-256 of sco-sdk-core-source-<version>.zip")
 
 set(_sco_cs_name "sco-sdk-core-source-${SCO_SDK_VERSION}")
@@ -88,15 +88,14 @@ if(NOT _have)
 endif()
 message(STATUS "sco-core source kit: ${_sco_cs_zip_name} SHA-256 verified")
 
-# This check applies even when tests are disabled and on Windows. The provisional
-# profile is bound to one exact locally packaged pair; a new coordinated source
-# needs its own review and pins rather than a permissive hash override.
-set(SC_MP_NET_BOUNDARY_PROFILE "rc2" CACHE STRING "Reviewed relay network boundary profile (rc2 or dev-1b)")
-set_property(CACHE SC_MP_NET_BOUNDARY_PROFILE PROPERTY STRINGS rc2 dev-1b)
-if(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "rc2")
-  set(_boundary_sdk_sha "51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e")
-  set(_boundary_source_sha "ddd1d75055f6b0efd69af4ac2eff6a18a5ff177f87cb28c938af3a625befbbb8")
-  set(_boundary_sums "de2321d0f094d5cef976c178abffaa2fff83500749366aff65db7f10d2937e08")
+# This check applies even when tests are disabled and on Windows. The default is the immutable stable release;
+# the separately reviewed development pair can be selected explicitly for coordinated compatibility work.
+set(SC_MP_NET_BOUNDARY_PROFILE "stable-2.4.0" CACHE STRING "Reviewed relay network boundary profile (stable-2.4.0 or dev-1b)")
+set_property(CACHE SC_MP_NET_BOUNDARY_PROFILE PROPERTY STRINGS stable-2.4.0 dev-1b)
+if(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "stable-2.4.0")
+  set(_boundary_sdk_sha "0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc")
+  set(_boundary_source_sha "df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51")
+  set(_boundary_sums "0731afbc8632996990179950e60e03c2e9f1d263bf9f6d96f483875a7de73d78")
 elseif(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "dev-1b")
   set(_boundary_sdk_sha "bb52b8bf1cab5aea09939e68a387705149411ce6c8af48e3f3f2576fc8a83c31")
   set(_boundary_source_sha "5239c2820049eaae43185272771085eb443871430b2ef0cff17b07fc72fba166")

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Traffic counting around a pipe (server/traffic.h): every datagram that goes through is
 // counted, and nothing else about it is touched.
-#include "server/traffic.h"
+#include "traffic.h"
 
 namespace sco::relay {
 

@@ -14,9 +14,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Linux and Windows independently package the exact coordinated source and
-# verify the same development archive hashes. A separate Windows job retains
-# published RC2 coverage. These are synthetic tests, not game acceptance.
+# Stable SDK 2.4.0 is tested on Linux and Windows. Separate jobs exercise the
+# exact coordinated development pair; all runs are synthetic tests, not game acceptance.
 env:
   CORE_DEVELOPMENT_SHA: 1b6782bc5c8b7d189cdff4c83e81957f09af35d7
   DEVELOPMENT_SDK_SHA256: bb52b8bf1cab5aea09939e68a387705149411ce6c8af48e3f3f2576fc8a83c31
@@ -29,9 +28,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - os: ubuntu-24.04
+            config: Release
+            label: Linux / stable SDK 2.4.0
+            development: false
           - os: windows-2022
             config: Release
-            label: Windows / published RC2
+            label: Windows / stable SDK 2.4.0
             development: false
           - os: windows-2022
             config: Release
@@ -117,13 +120,27 @@ jobs:
             "-DSC_MP_NET_BOUNDARY_PROFILE=dev-1b"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Configure Windows with published RC2
-        if: ${{ !matrix.development }}
+      - name: Configure Linux with stable SDK 2.4.0
+        if: ${{ !matrix.development && runner.os == 'Linux' }}
         run: >-
-          cmake -S . -B build "-DCMAKE_BUILD_TYPE=${{ matrix.config }}" "-DSC_MP_NET_BOUNDARY_PROFILE=rc2"
-          "-DSCO_SDK_VERSION=2.4.0" "-DSCO_SDK_RELEASE_TAG=sdk-v2.4.0-rc.2"
-          "-DSCO_SDK_SHA256=51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e"
-          "-DSCO_CORE_SOURCE_SHA256=ddd1d75055f6b0efd69af4ac2eff6a18a5ff177f87cb28c938af3a625befbbb8"
+          cmake -S . -B build -G 'Unix Makefiles' "-DCMAKE_BUILD_TYPE=${{ matrix.config }}"
+          "-DSC_MP_NET_BOUNDARY_PROFILE=stable-2.4.0"
+          "-DSCO_SDK_VERSION=2.4.0" "-DSCO_SDK_RELEASE_TAG=sdk-v2.4.0"
+          "-DSCO_SDK_SHA256=0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc"
+          "-DSCO_CORE_SOURCE_SHA256=df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51"
+
+      - name: Configure Windows with stable SDK 2.4.0
+        if: ${{ !matrix.development && runner.os == 'Windows' }}
+        run: >-
+          cmake -S . -B build "-DCMAKE_BUILD_TYPE=${{ matrix.config }}" "-DSC_MP_NET_BOUNDARY_PROFILE=stable-2.4.0"
+          "-DSCO_SDK_VERSION=2.4.0" "-DSCO_SDK_RELEASE_TAG=sdk-v2.4.0"
+          "-DSCO_SDK_SHA256=0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc"
+          "-DSCO_CORE_SOURCE_SHA256=df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51"
+
+      # Probe the MSVC source/linker behavior before the relay build gate can reject a changed MSBuild environment.
+      - name: Check MSVC linker directives and empty LIB path behavior
+        if: runner.os == 'Windows'
+        run: ctest --test-dir build -C ${{ matrix.config }} -R '^relay_msvc_pragma_link$' --output-on-failure --verbose
 
       - name: Build
         run: cmake --build build --config ${{ matrix.config }}

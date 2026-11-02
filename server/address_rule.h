@@ -5,7 +5,7 @@
 // is no "allow every address" switch: a server on the internet lets in the ranges its players really
 // come from, and nothing else. The rule itself is enforced by AddressFilter (server/net_boundary.h);
 // this file reads the extra ranges from the config file and describes the whole rule for the log.
-#include "server/net_boundary.h"
+#include "net_boundary.h"
 #include <string>
 #include <string_view>
 #include <vector>

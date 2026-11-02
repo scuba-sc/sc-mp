@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The operator log (server/log.h): levels, the stderr sink that adds a UTC time, and Format.
 // Plain printf underneath, because sco-core's rules keep iostreams out of this code.
-#include "server/log.h"
+#include "log.h"
 #include <cstdarg>
 #include <cstdio>
 #include <ctime>

@@ -2,29 +2,31 @@
 
 sc-mp is the optional co-presence `multiplayer` plugin for [sc-offline](https://github.com/scuba-sc/sc-offline),
 and the home of its player-run relay server. Read [README.md](README.md) first.
-sc-mp consumes the published sco-core SDK only, and sco-core's and sc-offline's contribution rules apply
-here too: [sco-core CONTRIBUTING](https://github.com/scuba-sc/sco-core/blob/main/CONTRIBUTING.md),
-[sc-offline CONTRIBUTING](https://github.com/scuba-sc/sc-offline/blob/main/CONTRIBUTING.md).
+Released sc-mp builds consume the published sco-core SDK. For coordinated
+development and review, a build may instead use a current, reviewed, unreleased
+sco-core candidate selected in coordination with the core owner, with the exact
+source revision and artifact hashes recorded. A held candidate remains held; a
+development check does not approve its merge or release. Transition to a published stable SDK
+is a separate deliberate step.
+
+sc-mp's own code is GPL-3.0-only; the contribution checks below follow the project's
+[sco-core contribution guidance](https://github.com/scuba-sc/sco-core/blob/main/CONTRIBUTING.md)
+and [IP policy](https://github.com/scuba-sc/sco-core/blob/main/IP_POLICY.md).
 
 ## Terms of contribution
 
-This repository has no licence-by-contribution text of its own yet. The terms below are quoted from the
-sibling repositories, not restated. The maintainer decides how they apply here.
+By opening a pull request you agree your contribution is licensed under
+GPL-3.0-only, and confirm you wrote it or have the right to contribute it on
+those terms. Answer the source, rights and game-material questions in the
+[sco-core IP policy](https://github.com/scuba-sc/sco-core/blob/main/IP_POLICY.md#contributions)
+in the pull request description. Identify outside sources, their licences and
+any employer or third-party ownership claims. Material with unknown or disputed
+origin or rights is not distributed until resolved, rewritten or removed.
 
-From sco-core's CONTRIBUTING, section "License":
-
-> By opening a pull request you agree your contribution is licensed under GPL-3.0-only, and you confirm you
-> wrote it or have the right to contribute it on those terms; answer the questions in the pull request template
-> ([IP policy](https://github.com/scuba-sc/sco-core/blob/main/IP_POLICY.md)).
-
-From sc-offline's CONTRIBUTING, section "License":
-
-> By opening a pull request you agree your contribution is licensed under GPL-3.0-only.
-
-sc-mp's own licence is GPL-3.0-only ([LICENSE](LICENSE)). The three questions that sco-core's IP policy asks of
-every pull request (source, rights, game material) are in
-[sco-core IP_POLICY.md, "Contributions"](https://github.com/scuba-sc/sco-core/blob/main/IP_POLICY.md).
-Put the answers in the pull request description.
+Preserve outside contributors' credit and applicable source licence notices;
+these checks do not retroactively establish rights or change the terms of earlier
+submissions. Existing unresolved contribution records remain in
+[PROVENANCE.md](PROVENANCE.md) for maintainer review.
 
 ## Outside contributors are recorded
 
@@ -40,9 +42,11 @@ player) belongs in `server/` next to it, in its own CMake target, with its own R
 share one wire header, `plugins/multiplayer/relay_wire.h`: a new layout gets
 a new wire version, and an old version is never reinterpreted.
 
-A relay is built from the published SDK's `core-source` profile (`sco::net::Core`, `udp::Socket`,
-`ScopedTransport`), pinned the same way as the plugin by [cmake/ScoSdk.cmake](cmake/ScoSdk.cmake). It never reads
-a sibling sco-core checkout and never copies SDK sources into this repository.
+A released relay is built from the published SDK's `core-source` profile
+(`sco::net::Core`, `udp::Socket`, `ScopedTransport`), pinned the same way as the
+plugin by [cmake/ScoSdk.cmake](cmake/ScoSdk.cmake). Coordinated development
+builds may use a reviewed candidate kit under the recorded-input rule above. They
+do not read an arbitrary sibling checkout or copy SDK sources into this repository.
 
 ### Guardrails any relay must meet
 
@@ -60,7 +64,8 @@ a sibling sco-core checkout and never copies SDK sources into this repository.
 3. **No unauthenticated remote commands between peers.** Traffic is authenticated but plaintext
    ([net-wire.md, "Known limits"](https://github.com/scuba-sc/sco-core/blob/main/docs/net-wire.md)); players
    use a VPN for confidentiality.
-4. **Public SDK surface only.** Nothing from outside the published SDK archive and its documented headers.
+4. **Public SDK surface only.** Use documented SDK headers and interfaces from the published archive, or from an
+   exactly pinned reviewed candidate kit for coordinated development as described above.
 5. **A relay is never a player.** Its roster message (`multiplayer.relay`) says so; the plugin does not list it
    as a player.
 6. **Evidence.** A green CI run is a build and a synthetic test. Write "not run in game" unless a recorded

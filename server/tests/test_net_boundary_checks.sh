@@ -14,7 +14,7 @@ set -u
 root=${1:-}
 core=${2:-}
 cxx=${3:-}
-profile=${4:-rc2}
+profile=${4:-stable-2.4.0}
 other=${5:-}
 if [ -z "$root" ] || [ -z "$core" ] || [ ! -f "$root/server/tools/check-net-boundary.sh" ] || [ ! -f "$core/include/sco/net/core.h" ]; then
     echo "usage: sh test_net_boundary_checks.sh <repository root> <extracted sco-core source kit> [C++ compiler]" >&2
