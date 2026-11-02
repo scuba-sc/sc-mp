@@ -9,13 +9,12 @@ own pace; sc-offline does not ship it.
 
 ## Status
 
-Development code. **It has not been run in game.** The plugin builds against the sco-core SDK's public
-headers only (pinned to the immutable SDK 2.4.0 release,
-[`sdk-v2.4.0`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0),
-from signed source commit `6106fa3639cbcc28f78a1ded8de2707de019f4d3`); the headers it needs, such as
-`sc_private_session.h`, have shipped since SDK 2.2.0. Joining a session needs the
-host to positively admit it as offline. Treat everything here as unverified until a release says
-otherwise.
+Development code. **It has not been run in game.** Current main is
+`9b73627b07a4d7a585b68f38ba6a50e4fb3968fa`; integration PRs #14–#18 and #20 are merged on
+stable SDK 2.4.0. Windows/Linux CI covers synthetic lifecycle and relay-process behavior. Session
+authority and receipts remain process-rooted and volatile: durable recovery, a native game authority
+bridge and in-game co-presence are not implemented or validated. The plugin uses only sco-core public
+headers and requires the host to positively admit an offline session.
 
 ## Layout
 

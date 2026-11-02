@@ -77,11 +77,10 @@ is still checked. To move to a newer release, change `SCO_SDK_VERSION`, `SCO_SDK
 The program is `build/server/sco-relay` on a single-config POSIX build, or
 `build/server/Release/sco-relay.exe` with the Visual Studio generator.
 
-The native Windows suite registers five tests, including the real relay child
-with two authenticated loopback clients, routing, wrong-passphrase refusal and
-clean event-driven shutdown. Windows has not been tested on this integration
-branch. Such tests provide local process/transport evidence, not two-PC LAN or
-game acceptance. POSIX-only shell boundary checks remain separate.
+The current main CI runs the relay lifecycle suite on Windows and Linux, including real
+relay-process and loopback transport checks. These synthetic process/transport results do not
+establish two-PC LAN behavior, Windows firewall configuration, durable recovery or game acceptance.
+POSIX-only shell boundary checks remain separate.
 
 ## Run
 
