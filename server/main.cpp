@@ -7,12 +7,12 @@
 //
 // Exit status: 0 after a clean stop, 1 when it cannot start (the message says why and what to
 // do), 2 when it is started the wrong way.
-#include "server/address_rule.h"
-#include "server/config.h"
-#include "server/log.h"
-#include "server/net_boundary.h"
-#include "server/run_loop.h"
-#include "server/session.h"
+#include "address_rule.h"
+#include "config.h"
+#include "log.h"
+#include "net_boundary.h"
+#include "run_loop.h"
+#include "session.h"
 #include <chrono>
 #include <cstdint>
 #include <cstdio>

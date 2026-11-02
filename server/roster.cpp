@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The roster of players and their slots: the code behind server/roster.h.
 // What a slot and its generation are is described in server/roster.h.
-#include "server/roster.h"
+#include "roster.h"
 
 namespace sco::relay {
 

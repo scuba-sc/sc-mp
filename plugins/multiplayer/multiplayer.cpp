@@ -712,7 +712,7 @@ void Control(bool host) {
 }
 void PanelEvent(const char* id,const sco_widget_event* e,void*) {
     if(!panelLive || !id || std::strcmp(id,panelId) || !e || e->size<sizeof(*e)) return;
-    bool save=false;
+    bool save=false,refreshPanel=true;
     if(e->kind==SCO_WIDGET_BUTTON) {
         if(e->node_id==1) Control(true);else if(e->node_id==2) Control(false);
         else if(e->node_id==3) Leave(nullptr,0,nullptr,reply,sizeof(reply));
@@ -726,7 +726,7 @@ void PanelEvent(const char* id,const sco_widget_event* e,void*) {
         else if(e->node_id==5) save=Text(cfg.address,e->text);
         else if(e->node_id==6) Text(cfg.pass,e->text,255); // host widgets limit
         else if(e->node_id==9 && mpwire::ClassOk(e->text,std::strlen(e->text))) { save=Text(cfg.avatar,e->text);announced=false; }
-        else if(e->node_id==21) SetDraft(e->text);
+        else if(e->node_id==21) { SetDraft(e->text);refreshPanel=false; } // preserve later events queued from this panel generation
     } else if(e->kind==SCO_WIDGET_SLIDER && std::isfinite(e->value) && e->value>=1024 && e->value<=65535 && e->value==std::floor(e->value)) {
         if(e->node_id==7) { cfg.hostPort=static_cast<int>(e->value);save=true; }
         else if(e->node_id==8) { cfg.joinPort=static_cast<int>(e->value);save=true; }
@@ -735,7 +735,7 @@ void PanelEvent(const char* id,const sco_widget_event* e,void*) {
         else if(e->node_id==11) { cfg.remember=e->value!=0;save=true; }
     }
     if(save && SaveSettings()!=SCO_OK) std::snprintf(reply,sizeof(reply),"Settings not saved: sco.storage unavailable/refused; session-only values retained");
-    UpdatePanel();
+    if(refreshPanel) UpdatePanel();
 }
 constexpr unsigned kPanelNodes=23; // 1-19: the session controls as before; 20-23: the chat history, the message box, Send and the notice
 void UpdatePanel() {

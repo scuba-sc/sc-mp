@@ -42,6 +42,7 @@ unsigned hostCalls=0,joinCalls=0,leaveCalls=0,spawnCalls=0,removeCalls=0,transfo
 bool brokerPresent=true,networkActive=false,admitted=true,inTx=false,widgetsPresent=true,storagePresent=true,failPut=false;
 uint32_t widgetVersion=0,storageVersion=0;
 uint32_t state=0,memberTotal=2,getPeersCalls=0;
+unsigned panelUpdates=0;
 sco_widget_event_fn panelCallback=nullptr;
 bool maskSeen=false,rememberSeen=false,hostSeen=false,joinSeen=false,panelRemoved=false;
 std::string passInPanel,addressInPanel;
@@ -80,6 +81,7 @@ sco_result Subscribe(sco_plugin*,const char* event,sco_event_fn fn,void*) { even
 sco_result Unsubscribe(sco_plugin*,const char* event,sco_event_fn) { events.erase(event);return SCO_OK; }
 sco_result SetPanel(sco_plugin* s,const char* id,const char*,const sco_widget_node* nodes,uint32_t n,uint32_t stride,sco_widget_event_fn cb,void*) {
     if(s!=owner || std::strcmp(id,"multiplayer.session") || stride!=sizeof(sco_widget_node_1_2)) return SCO_BAD_ARG;
+    ++panelUpdates;
     panelCallback=cb;hostSeen=joinSeen=maskSeen=rememberSeen=false;CHECK(n==23); // nodes 1-19 as before, then the chat's 20-23
     for(uint32_t i=0;i<n;++i) {
         const auto* ext=reinterpret_cast<const sco_widget_node_1_2*>(reinterpret_cast<const char*>(nodes)+i*stride);
@@ -194,6 +196,7 @@ sco_result Query(const char* name,uint32_t version,const void** out) {
 }
 void UI(uint32_t id,uint32_t kind,const char* text=nullptr,double value=0) {
     CHECK(panelCallback!=nullptr);if(!panelCallback) return;
+    if(id==21 && kind==SCO_WIDGET_TEXT_INPUT && text) chatDraft=text; // the widget owns the live edit until the panel is refreshed
     sco_widget_event event{};event.size=sizeof(event);event.node_id=id;event.kind=kind;event.text=text;event.value=value;event.index=static_cast<int32_t>(value);
     panelCallback("multiplayer.session",&event,nullptr);
 }
@@ -444,6 +447,16 @@ void ChatSessions(const sco_api* api,sco_result (*load)(const sco_api*,sco_plugi
     CHECK(chatCopies[2]==4 && chatDraft.empty() && chatRows.size()==4 && chatRows.back()=="You (delivery unconfirmed): zq fourth partial");
     CHECK(LogCount("zq partial")==0 && StatusText().find("zq partial")==std::string::npos);
     partialChatSend=false;partialChatResult=SCO_FAILED;unload();
+
+    // Editing the chat box must not replace the panel before a queued Send click from that panel pass.
+    Reset();modLog.clear();serverIsRelay=false;selfId=1;members={1};memberTotal=1;sentCount.clear();sentLast.clear();
+    CHECK(load(api,owner)==SCO_OK);networkActive=true;state=SC_PRIVATE_SESSION_HOSTING;StateEvent(true);
+    const unsigned beforeEdit=panelUpdates;
+    type("zq edit then send in one panel pass");
+    CHECK(chatDraft=="zq edit then send in one panel pass" && panelUpdates==beforeEdit);
+    UI(22,SCO_WIDGET_BUTTON);
+    CHECK(sent()==1 && chatRows.back()=="You: zq edit then send in one panel pass");
+    unload();
     members=savedMembers;memberTotal=savedTotal;selfId=savedSelf;serverIsRelay=savedRelay;failChatSend=false;peerNames.clear();
 }
 void ChatLayoutChecks() {

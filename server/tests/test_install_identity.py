@@ -53,10 +53,24 @@ elif name == 'id':
         print('0')
     elif 'sco-relay' not in '\n'.join(data['passwd']):
         sys.exit(1)
+    elif args == ['-u', 'sco-relay']:
+        row = next(r for r in data['passwd'] if r.startswith('sco-relay:'))
+        print(row.split(':')[2])
+    elif args == ['-g', 'sco-relay']:
+        row = next(r for r in data['passwd'] if r.startswith('sco-relay:'))
+        print(row.split(':')[3])
     elif args == ['-G', 'sco-relay']:
         print(data.get('groups', '450'))
     else:
         print('uid=450(sco-relay) gid=450(sco-relay) groups=450(sco-relay)')
+elif name == 'passwd':
+    with open(os.environ['IDENTITY_LOG'], 'a') as log:
+        log.write(name + ' ' + ' '.join(args) + '\n')
+    if data.get('passwd_command_failure'):
+        sys.exit(1)
+    if args != ['-S', 'sco-relay']:
+        sys.exit(2)
+    print(data.get('passwd_status_output', 'sco-relay L 20000 0 99999 7 -1'))
 elif name == 'stat':
     print('0:1:755')
 elif name == 'getfacl':
@@ -94,7 +108,7 @@ class IdentitySandbox(unittest.TestCase):
         self.log = self.base / 'mutations'
         self.sentinel = self.base / 'accounts-files-service'
         self.sentinel.write_text('UNCHANGED')
-        commands = ('uname dirname getent id awk cut sed head tr tar mktemp mkdir rmdir rm '
+        commands = ('uname dirname getent id passwd awk cut sed head tr tar mktemp mkdir rmdir rm '
                     'cmake g++ make apt-get nproc groupadd useradd usermod groupmod '
                     'install od grep chown chmod mv systemctl sleep setpriv su nologin find stat getfacl')
         for name in commands.split():
@@ -189,6 +203,15 @@ class InstallerIdentity(IdentitySandbox):
     def test_non_enumerated_account_collision(self):
         self.data['keyed_passwd'] = [self.data['passwd'].pop()]
         self.data['keyed_group'] = [self.data['group'].pop()]
+        self.assert_refused()
+
+    def test_duplicate_gshadow_record_hidden_by_keyed_lookup(self):
+        valid_row = self.data['gshadow'][0]
+        self.data['keyed_gshadow'] = [valid_row]
+        self.data['files_gshadow'] = [valid_row]
+        # A keyed NSS lookup can return only the first row; enumeration must
+        # reveal and reject the later unsafe duplicate before any mutation.
+        self.data['gshadow'].append('sco-relay:!:intruder:')
         self.assert_refused()
 
     def test_additional_unsafe_identity_shapes(self):

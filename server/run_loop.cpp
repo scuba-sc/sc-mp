@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // RunLoop and the stats line (server/run_loop.h): one pass is one pump of the session, timed with
 // the real clock; the stats line is written when the interval is up.
-#include "server/run_loop.h"
-#include "server/address_rule.h"
+#include "run_loop.h"
+#include "address_rule.h"
 #include <chrono>
 
 namespace sco::relay {
