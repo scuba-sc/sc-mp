@@ -1,5 +1,13 @@
 # Relay roadmap
 
+## Current baseline (2026-11-02)
+
+Current main is `9b73627b07a4d7a585b68f38ba6a50e4fb3968fa`, with integration PRs #14–#18 and #20
+merged. The published SDK 2.4.0 source is `6106fa3639cbcc28f78a1ded8de2707de019f4d3`. Current
+Windows/Linux CI and loopback tests exercise synthetic relay behavior only. Session authority and
+receipts are process-rooted and volatile; durable recovery and a native game authority bridge remain
+future work. No in-game co-presence run is recorded.
+
 Imported from sc-offline PR #133 (commit 97b0b7a). The PR description, as written there:
 
 ## What this changes
@@ -27,7 +35,9 @@ The local builds used an SDK packaged from sco-core `82462b0`; `main` originally
 (`sdk-v2.4.0-rc.1`) and then release candidate 2 (`sdk-v2.4.0-rc.2`). The current consumer pin is the immutable
 SDK 2.4.0 release (`sdk-v2.4.0`), which CI builds against.
 
-Not tested: nothing was run in game. The production game shell refuses Join today (no admission collector), so an in-game join through a relay is not possible yet.
+Not tested: nothing was run in game. [sc-offline issue #183](https://github.com/scuba-sc/sc-offline/issues/183)
+covers a synthetic VPN address range; it does not verify Windows firewall behavior or an in-game
+join. Host admission, durable relay recovery and gameplay acceptance remain separate open gates.
 
 ## Checklist
 
