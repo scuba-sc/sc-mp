@@ -61,6 +61,10 @@ bool refuseProtocol=false;
 std::vector<std::string> chatRows;               // the panel's chat history (node 20)
 std::string chatDraft,chatNotice;                // the message box (node 21) and the not-encrypted notice (node 23)
 bool chatSendDisabled=false;                     // Send (node 22) is greyed out
+bool partialChatSend=false;
+sco_result partialChatResult=SCO_FAILED;
+bool quotaChatRefusal=false;
+std::map<uint64_t,unsigned> chatCopies;
 bool failChatSend=false;                         // sco.net refuses to take a chat message
 std::map<uint64_t,std::string> peerNames;        // names sco.net reports; unset: "Remote", or "Relay Server" for peer 1 of a relay
 bool refuseNear=false;                           // sco.net refuses to register a multiplayer.near.<slot> channel
@@ -142,7 +146,12 @@ sco_result Name(uint64_t id,char* out,uint32_t cap) {
     std::snprintf(out,cap,"%s",it!=peerNames.end()?it->second.c_str():(id==1 && serverIsRelay?"Relay Server":"Remote"));return SCO_OK;
 }
 sco_result Send(sco_plugin*,const char* channel,const void* data,uint32_t len) {
-    if(failChatSend && !std::strcmp(channel,"multiplayer.chat")) return SCO_TOO_MANY;
+    if(quotaChatRefusal && !std::strcmp(channel,"multiplayer.chat")) return SCO_TOO_MANY;
+    if(partialChatSend && !std::strcmp(channel,"multiplayer.chat")) {
+        // Hypothetical unspecified failure, not the published SDK's TOO_MANY path.
+        ++chatCopies[2];return partialChatResult;
+    }
+    if(failChatSend && !std::strcmp(channel,"multiplayer.chat")) return SCO_UNAVAILABLE;
     ++sendCalls;++sentCount[channel];
     sentLast[channel]=Bytes(static_cast<const uint8_t*>(data),static_cast<const uint8_t*>(data)+len);return SCO_OK;
 }
@@ -410,6 +419,35 @@ void ChatSessions(const sco_api* api,sco_result (*load)(const sco_api*,sco_plugi
     CHECK(sent()==1 && sentLast["multiplayer.chat"]==ChatBytes("zq joiner reply") && chatRows.size()==3 && chatRows[2]=="You: zq joiner reply");
     CHECK(LogCount("zq")==0 && StatusText().find("zq")==std::string::npos);
     unload();CHECK(messages.empty() && events.empty());
+    // A hypothetical unknown error is ambiguous: one recipient may already have a copy.
+    Reset();serverIsRelay=false;selfId=1;members={1,2,3};memberTotal=3;chatCopies.clear();
+    CHECK(load(api,owner)==SCO_OK);
+    networkActive=true;state=SC_PRIVATE_SESSION_HOSTING;StateEvent(true);Tick();
+    quotaChatRefusal=true;
+    for(int i=0;i<4;++i) {
+        send("zq refused");
+        CHECK(chatDraft=="zq refused" && chatRows.empty() && notSent() && chatCopies.empty());
+    }
+    quotaChatRefusal=false;
+    partialChatSend=true;
+    send("zq partial");
+    CHECK(chatCopies[2]==1 && chatCopies[3]==0);
+    CHECK(panelReply.find("may have reached some players")!=std::string::npos && !notSent());
+    CHECK(chatDraft.empty() && chatRows==std::vector<std::string>({"You (delivery unconfirmed): zq partial"})); // preserve the text without a success echo or one-click replay
+    Tick();CHECK(chatRows.size()==1 && chatRows[0]=="You (delivery unconfirmed): zq partial");
+    UI(22,SCO_WIDGET_BUTTON);CHECK(chatCopies[2]==1);
+    send("zq second partial");partialChatResult=SCO_FAILED;
+    send("zq third partial");
+    CHECK(panelReply.find("may have reached some players")!=std::string::npos && chatDraft.empty());
+    send("zq fourth partial");
+    CHECK(chatCopies[2]==3 && chatCopies[3]==0 && chatDraft=="zq fourth partial");
+    CHECK(panelReply.find("at most 3 messages in 5 seconds")!=std::string::npos);
+    std::this_thread::sleep_for(std::chrono::milliseconds(mpwire::kChatWindowMs+10));
+    UI(22,SCO_WIDGET_BUTTON);
+    CHECK(chatCopies[2]==4 && chatDraft.empty() && chatRows.size()==4 && chatRows.back()=="You (delivery unconfirmed): zq fourth partial");
+    CHECK(LogCount("zq partial")==0 && StatusText().find("zq partial")==std::string::npos);
+    partialChatSend=false;partialChatResult=SCO_FAILED;unload();
+
     // Editing the chat box must not replace the panel before a queued Send click from that panel pass.
     Reset();modLog.clear();serverIsRelay=false;selfId=1;members={1};memberTotal=1;sentCount.clear();sentLast.clear();
     CHECK(load(api,owner)==SCO_OK);networkActive=true;state=SC_PRIVATE_SESSION_HOSTING;StateEvent(true);

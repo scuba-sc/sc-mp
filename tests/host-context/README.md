@@ -1,14 +1,18 @@
 # Isolated kit verification
 
-The new CMake wrapper invokes `cmake/verify_host_context_kit.py` using a Python
-3.8-or-newer interpreter and process arguments; it does not invoke a shell. It
-runs before `add_subdirectory`. The verifier checks the literal inventory digest,
-all regular-file names and hashes, and the exact regular-file set. It refuses
-`..` root path components before normalization, symlinks in the root path or
-kit tree, and other special files.
-Extra empty directories are allowed. The directory must be private and stable
-while checking and building: these checks do not defend against concurrent
-hostile replacement or prove the origin of an otherwise matching inventory.
+`cmake/VerifyExtractedKit.cmake` verifies the extracted kit before
+`add_subdirectory` executes its CMake files. It checks the pinned inventory
+digest, safe relative inventory paths, the exact file set, and every file hash.
+It rejects `..` in the supplied root path before normalization and symlinks in
+the root path or kit tree. An unlisted special file also fails the exact-file-set
+check. Empty extra directories are allowed. This shared CMake check does not
+require Python and does not prove the origin of a matching inventory.
+
+The separate `cmake/verify_host_context_kit.py` is used by the offline archive
+qualifier and Windows precheck. It independently checks the extracted kit,
+including nonregular entries. The directory must remain private and stable while
+checking and building; neither verifier defends against hostile concurrent
+replacement.
 
 The qualifier hashes and inspects the same in-memory archive, capped at 64 MiB;
 archive entries are limited to 2,048 and 64 MiB uncompressed in total. It rejects

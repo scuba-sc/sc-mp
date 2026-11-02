@@ -1,22 +1,77 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# Validate the complete extracted tree before any SDK CMake executes.
+# Verify a hash-pinned extracted archive before any of its contents are used.
+# This proves consistency with the selected archive, not origin authentication.
 function(sc_mp_verify_extracted_kit kit_root expected_sums label)
-  find_program(_kit_python NAMES python3 python REQUIRED)
-  execute_process(
-    COMMAND "${_kit_python}" -c "import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)"
-    RESULT_VARIABLE _python_result
-    TIMEOUT 10)
-  if(NOT _python_result STREQUAL "0")
-    message(FATAL_ERROR "${label}: Python 3.8 or newer is required for kit verification")
+  if("${kit_root}" MATCHES "(^|[/\\\\])\\.\\.([/\\\\]|$)")
+    message(FATAL_ERROR "kit verification failed: parent component in kit root path")
   endif()
-  execute_process(
-    COMMAND "${_kit_python}" "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/verify_host_context_kit.py" "${kit_root}" "${expected_sums}"
-    RESULT_VARIABLE _kit_result
-    OUTPUT_VARIABLE _kit_output
-    ERROR_VARIABLE _kit_error
-    TIMEOUT 60)
-  if(NOT _kit_result STREQUAL "0")
-    message(FATAL_ERROR "${label}: ${_kit_error} ${_kit_output}")
+
+  get_filename_component(_kit_root "${kit_root}" ABSOLUTE)
+  set(_checked_path "${_kit_root}")
+  while(TRUE)
+    if(IS_SYMLINK "${_checked_path}")
+      message(FATAL_ERROR "kit verification failed: symlink in kit root path")
+    endif()
+    get_filename_component(_parent_path "${_checked_path}" DIRECTORY)
+    if(_parent_path STREQUAL _checked_path)
+      break()
+    endif()
+    set(_checked_path "${_parent_path}")
+  endwhile()
+
+  if(NOT IS_DIRECTORY "${_kit_root}")
+    message(FATAL_ERROR "kit verification failed: extraction root is not a directory")
   endif()
-  message(STATUS "${label}: ${_kit_output}")
+  if(IS_SYMLINK "${_kit_root}/SHA256SUMS")
+    message(FATAL_ERROR "kit verification failed: inventory is a symbolic link")
+  endif()
+
+  file(SHA256 "${_kit_root}/SHA256SUMS" _actual_sums)
+  if(NOT _actual_sums STREQUAL expected_sums)
+    message(FATAL_ERROR "kit verification failed: ${label} inventory changed")
+  endif()
+
+  file(STRINGS "${_kit_root}/SHA256SUMS" _inventory)
+  set(_expected_files SHA256SUMS)
+  foreach(_entry IN LISTS _inventory)
+    if(NOT _entry MATCHES "^([0-9a-f]+)  ([^;]+)$")
+      message(FATAL_ERROR "kit verification failed: malformed ${label} inventory")
+    endif()
+    set(_expected_hash "${CMAKE_MATCH_1}")
+    set(_path "${CMAKE_MATCH_2}")
+    string(LENGTH "${_expected_hash}" _hash_length)
+    if(NOT _hash_length EQUAL 64 OR _path MATCHES "(^/|(^|/)\\.\\.(/|$)|[\\\\])")
+      message(FATAL_ERROR "kit verification failed: unsafe ${label} inventory path")
+    endif()
+    list(APPEND _expected_files "${_path}")
+  endforeach()
+
+  cmake_policy(PUSH)
+  cmake_policy(SET CMP0009 NEW)
+  file(GLOB_RECURSE _kit_entries LIST_DIRECTORIES true RELATIVE "${_kit_root}" "${_kit_root}/*")
+  cmake_policy(POP)
+  set(_actual_files "")
+  foreach(_path IN LISTS _kit_entries)
+    if(IS_SYMLINK "${_kit_root}/${_path}")
+      message(FATAL_ERROR "kit verification failed: symbolic link in ${label} extraction")
+    endif()
+    if(NOT IS_DIRECTORY "${_kit_root}/${_path}")
+      list(APPEND _actual_files "${_path}")
+    endif()
+  endforeach()
+  list(SORT _expected_files)
+  list(SORT _actual_files)
+  if(NOT _expected_files STREQUAL _actual_files)
+    message(FATAL_ERROR "kit verification failed: ${label} extraction has missing or extra files")
+  endif()
+
+  foreach(_entry IN LISTS _inventory)
+    string(REGEX MATCH "^([0-9a-f]+)  (.+)$" _matched "${_entry}")
+    set(_expected_hash "${CMAKE_MATCH_1}")
+    set(_path "${CMAKE_MATCH_2}")
+    file(SHA256 "${_kit_root}/${_path}" _actual_hash)
+    if(NOT _actual_hash STREQUAL _expected_hash)
+      message(FATAL_ERROR "kit verification failed: ${label} extraction file changed: ${_path}")
+    endif()
+  endforeach()
 endfunction()

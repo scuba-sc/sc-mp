@@ -180,11 +180,10 @@ class ExtractedTreeChecks(unittest.TestCase):
     def test_wrong_inventory_hash(self):
         self.assert_rejected(expected='0' * 64)
 
-    def test_failed_python_version_check(self):
+    def test_python_override_is_not_required(self):
         result, sentinel = self.run_cmake(python=self.root / 'missing-python3')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Python 3.8 or newer is required', result.stdout + result.stderr)
-        self.assertFalse(sentinel.exists())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(sentinel.exists())
 
     def test_modified_content(self):
         (self.kit / 'CMakeLists.txt').write_bytes(b'changed')

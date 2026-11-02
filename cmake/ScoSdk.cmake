@@ -18,6 +18,25 @@ set(SCO_SDK_ARCHIVE_DIR "" CACHE PATH "Local directory with the release assets o
 set(SCO_SDK_SHA256 "0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc"
     CACHE STRING "SHA-256 of sco-sdk-<version>.zip")
 
+# A relay build uses one reviewed pair. Validate the SDK side before unpacking
+# it or using its headers; the source-kit side is checked in ScoCoreSource.cmake.
+if(SC_MP_BUILD_RELAY)
+  set(SC_MP_NET_BOUNDARY_PROFILE "stable-2.4.0" CACHE STRING "Reviewed relay network boundary profile (stable-2.4.0 or dev-1b)")
+  set_property(CACHE SC_MP_NET_BOUNDARY_PROFILE PROPERTY STRINGS stable-2.4.0 dev-1b)
+  if(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "stable-2.4.0")
+    set(_relay_sdk_sha "0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc")
+    set(_relay_sdk_sums "1ea4dc9743f1d7bef959c8d80df068139b23de3997dc71590498ecc9ec57910b")
+  elseif(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "dev-1b")
+    set(_relay_sdk_sha "bb52b8bf1cab5aea09939e68a387705149411ce6c8af48e3f3f2576fc8a83c31")
+    set(_relay_sdk_sums "ded9ed96c374bf1f0fec75a361a656261416be5ac03f0846d61210cd953f2e55")
+  else()
+    message(FATAL_ERROR "Unknown SC_MP_NET_BOUNDARY_PROFILE: ${SC_MP_NET_BOUNDARY_PROFILE}")
+  endif()
+  if(NOT SCO_SDK_VERSION STREQUAL "2.4.0" OR NOT SCO_SDK_SHA256 STREQUAL _relay_sdk_sha)
+    message(FATAL_ERROR "SDK archive pair does not match the reviewed ${SC_MP_NET_BOUNDARY_PROFILE} network boundary profile")
+  endif()
+endif()
+
 set(_sco_sdk_name "sco-sdk-${SCO_SDK_VERSION}")
 set(_sco_sdk_zip_name "${_sco_sdk_name}.zip")
 set(_sco_sdk_url
@@ -76,6 +95,11 @@ if(NOT EXISTS "${SCO_SDK_ROOT}/SHA256SUMS")
   if(NOT EXISTS "${SCO_SDK_ROOT}/SHA256SUMS")
     message(FATAL_ERROR "sco-core SDK archive did not contain ${_sco_sdk_name}/SHA256SUMS")
   endif()
+endif()
+
+if(SC_MP_BUILD_RELAY)
+  include("${CMAKE_CURRENT_LIST_DIR}/VerifyExtractedKit.cmake")
+  sc_mp_verify_extracted_kit("${SCO_SDK_ROOT}" "${_relay_sdk_sums}" "SDK")
 endif()
 
 set(SCO_SDK_INCLUDE_DIR "${SCO_SDK_ROOT}/include" CACHE PATH "Extracted public SDK include directory" FORCE)

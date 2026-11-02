@@ -334,7 +334,7 @@ check_members "$(fact sockets_library)" "scope.cpp.o udp_posix.cpp.o"
 
 program=$(fact program)
 if [ -x "$program" ] && command -v ldd > /dev/null 2>&1; then
-    extra=$(ldd "$program" | awk '{print $1}' | grep -Ev '^(linux-vdso\.so\.1|libstdc\+\+\.so\.6|libm\.so\.6|libgcc_s\.so\.1|libc\.so\.6|/lib64/ld-linux-x86-64\.so\.2)$' | tr '\n' ' ')
+    extra=$(ldd "$program" | awk '{print $1}' | grep -Ev '^(linux-vdso\.so\.1|libstdc\+\+\.so\.6|libm\.so\.6|libgcc_s\.so\.1|libc\.so\.6|/lib64/ld-linux-x86-64\.so\.2|/lib/ld-linux-aarch64\.so\.1)$' | tr '\n' ' ')
     if [ -z "$extra" ]; then
         ok "the program needs only the C++ runtime and libc"
     else
@@ -360,8 +360,8 @@ is_allowed_system_header() {   # <source basename> <header name>
     return 1
 }
 
-# The production set: the server's sources, the shared wire header, and the one CMake module that fetches the kit.
-production="server/*.cpp server/*.h plugins/multiplayer/relay_wire.h cmake/ScoCoreSource.cmake"
+# The production set: server sources, the shared wire header and SDK fetch/verification modules.
+production="server/*.cpp server/*.h plugins/multiplayer/relay_wire.h cmake/ScoCoreSource.cmake cmake/ScoSdk.cmake cmake/VerifyExtractedKit.cmake"
 
 # Only the boundary file names the network library: not an include, not a type, not a comment.
 leaks=$(cd "$root" && grep -lE 'sco/net/|sc_net\.h|sco_net\.h|sco::net::' $production | grep -vxF 'server/net_boundary.cpp')

@@ -31,6 +31,7 @@ program=/usr/local/bin/sco-relay
 config_dir=/etc/sco-relay
 config=$config_dir/sco-relay.conf
 unit_target=/etc/systemd/system/sco-relay.service
+lock_dir=/run/sco-relay-installer.lock
 
 say() { echo "install: $*"; }
 die() { echo "install: $*" >&2; exit 1; }
@@ -38,9 +39,14 @@ die() { echo "install: $*" >&2; exit 1; }
 # What this script makes and must not leave behind: the half-made config and the build folder (which holds the copy).
 build_dir=""
 temporary=""
+lock_held=""
 cleanup() {
     [ -z "$temporary" ] || rm -f "$temporary"
     [ -z "$build_dir" ] || rm -rf "$build_dir"
+    if [ -n "$lock_held" ]; then
+        rmdir "$lock_dir" || echo "install: cannot remove installation lock $lock_dir; inspect it before retrying" >&2
+        lock_held=""
+    fi
 }
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
@@ -53,6 +59,183 @@ if [ ! -f "$root/CMakeLists.txt" ] || [ ! -f "$root/server/main.cpp" ] || [ ! -f
     die "run it from a copy of the sc-mp repository (a clone or an unpacked archive): sudo sh server/deploy/install.sh"
 fi
 command -v tar > /dev/null 2>&1 || die "tar is needed to copy the source tree"
+
+# ---- identity preflight: read only, before even making the build folder ------------------------------------------
+# Never adopt or repair an unrelated account. NSS enumeration is required to detect shared primary groups and
+# numeric aliases; an unavailable/non-enumerable database fails closed. Recheck after the build, before installation.
+validate_identity() {
+    identity_error="unsafe existing $account identity; use a dedicated locked system account and private group. Installation stopped."
+    # Permit files, optionally followed by systemd in its dynamic-user-only mode.
+    # Remote NSS and userdb providers may hide records from enumeration. DynamicUser
+    # identities occupy 61184..65519, outside the system ranges accepted below.
+    awk '
+        { sub(/#.*/, "") }
+        /^[[:space:]]*(passwd|group|shadow|gshadow|initgroups)[[:space:]]*:/ {
+            name = $0; sub(/:.*/, "", name); gsub(/[[:space:]]/, "", name)
+            source = $0; sub(/^[^:]*:[[:space:]]*/, "", source); sub(/[[:space:]]*$/, "", source)
+            gsub(/[[:space:]]+/, " ", source)
+            if (source != "files" && source != "files systemd") bad = 1
+            if (seen[name]++) bad = 1
+        }
+        END { exit (bad || !seen["passwd"] || !seen["group"] || !seen["shadow"] || !seen["gshadow"]) ? 1 : 0 }
+    ' /etc/nsswitch.conf || die "$identity_error (supported NSS policy: files, optionally files systemd)"
+    if awk '/^[[:space:]]*(passwd|group|shadow|gshadow|initgroups)[[:space:]]*:/ && /systemd/ { found=1 } END { exit !found }' /etc/nsswitch.conf; then
+        # Newer nss-systemd can route arbitrary Varlink/static userdb providers.
+        # Only PID 1 DynamicUser is supported, not homed, machined or userdbd.
+        for record in /etc/userdb/* /run/userdb/* /run/host/userdb/* /usr/lib/userdb/* /run/systemd/userdb/*; do
+            [ -e "$record" ] || [ -L "$record" ] || continue
+            case $record in /run/systemd/userdb/io.systemd.DynamicUser) ;;
+                *) die "$identity_error (external systemd userdb provider or record: $record)" ;;
+            esac
+        done
+    fi
+    ranges=$(awk '
+        /^[[:space:]]*#/ || NF == 0 { next }
+        $1 ~ /^(SYS_UID_MIN|SYS_UID_MAX|SYS_GID_MIN|SYS_GID_MAX|UID_MIN|GID_MIN)$/ {
+            if (NF != 2 || $2 !~ /^[1-9][0-9]*$/ || length($2) > 10 || seen[$1]++) bad=1
+            v[$1]=$2+0
+        }
+        END {
+            umin=("SYS_UID_MIN" in v ? v["SYS_UID_MIN"] : 101)
+            umax=("SYS_UID_MAX" in v ? v["SYS_UID_MAX"] : ("UID_MIN" in v ? v["UID_MIN"] : 1000)-1)
+            gmin=("SYS_GID_MIN" in v ? v["SYS_GID_MIN"] : 101)
+            gmax=("SYS_GID_MAX" in v ? v["SYS_GID_MAX"] : ("GID_MIN" in v ? v["GID_MIN"] : 1000)-1)
+            if (bad || umin>umax || gmin>gmax || umax>=61184 || gmax>=61184) exit 1
+            print umin, umax, gmin, gmax
+        }' /etc/login.defs) || die "$identity_error (unsupported system ID ranges in login.defs)"
+    # The validated range string is four decimal words, never shell code.
+    # shellcheck disable=SC2086
+    set -- $ranges
+    uid_min=$1 uid_max=$2 gid_min=$3 gid_max=$4
+    passwd_rows=$(getent passwd) || die "$identity_error (cannot enumerate passwd)"
+    group_rows=$(getent group) || die "$identity_error (cannot enumerate group)"
+    # Keyed NSS lookups can return identities omitted by enumeration (for example LDAP).
+    # Refuse inconsistent views rather than mistaking a hidden identity for a free name.
+    for database in passwd group; do
+        case $database in passwd) rows=$passwd_rows ;; group) rows=$group_rows ;; esac
+        listed=$(printf '%s\n' "$rows" | awk -F: '$1 == "sco-relay"')
+        if keyed=$(getent "$database" "$account"); then
+            [ -n "$keyed" ] && [ "$keyed" = "$listed" ] || die "$identity_error (inconsistent $database lookup)"
+        else
+            lookup_status=$?
+            [ "$lookup_status" -eq 2 ] && [ -z "$listed" ] && [ -z "$keyed" ] \
+                || die "$identity_error (failed $database lookup)"
+        fi
+    done
+    printf '%s\n' PASSWD "$passwd_rows" GROUP "$group_rows" | awk -F: -v umin="$uid_min" -v umax="$uid_max" -v gmin="$gid_min" -v gmax="$gid_max" '
+        $0 == "PASSWD" { table = "p"; next }
+        $0 == "GROUP" { table = "g"; next }
+        table == "p" {
+            if (NF != 7) bad = 1
+            pn[++np] = $1; pu[np] = $3; pg[np] = $4
+            if ($1 == "sco-relay") {
+                users++; uid = $3; primary = $4
+                if ($2 != "x" || $3 !~ /^[1-9][0-9]*$/ || length($3) > 10 || $3+0 < umin || $3+0 > umax || $6 != "/nonexistent" ||
+                    $7 !~ /^\/(usr\/)?(sbin\/nologin|bin\/false)$/) bad = 1
+            }
+        }
+        table == "g" {
+            if (NF != 4) bad = 1
+            gn[++ng] = $1; gg[ng] = $3
+            if ($1 == "sco-relay") {
+                groups++; gid = $3
+                if ($3 !~ /^[1-9][0-9]*$/ || length($3) > 10 || $3+0 < gmin || $3+0 > gmax ||
+                    ($4 != "" && $4 != "sco-relay")) bad = 1
+            }
+        }
+        END {
+            if (users > 1 || groups > 1 || (users && (!groups || primary != gid))) bad = 1
+            for (i = 1; i <= np; i++) {
+                if (users && pu[i] + 0 == uid + 0 && pn[i] != "sco-relay") bad = 1
+                if (groups && pg[i] + 0 == gid + 0 && pn[i] != "sco-relay") bad = 1
+            }
+            for (i = 1; i <= ng; i++)
+                if (groups && gg[i] + 0 == gid + 0 && gn[i] != "sco-relay") bad = 1
+            exit bad ? 1 : 0
+        }' || die "$identity_error"
+    # Name and numeric resolution must agree with the complete local records.
+    # This also refuses a systemd identity using our name when no local user exists.
+    for database in passwd group; do
+        case $database in passwd) rows=$passwd_rows ;; group) rows=$group_rows ;; esac
+        listed=$(printf '%s\n' "$rows" | awk -F: '$1 == "sco-relay"')
+        local_row=$(getent -s files "$database" "$account" || [ "$?" -eq 2 ]) || die "$identity_error (local lookup failed)"
+        [ "$listed" = "$local_row" ] || die "$identity_error (identity is not local)"
+        if [ -n "$listed" ]; then
+            number=$(printf '%s\n' "$listed" | cut -d: -f3)
+            numeric=$(getent "$database" "$number") || die "$identity_error (numeric lookup failed)"
+            [ "$numeric" = "$listed" ] || die "$identity_error (inconsistent numeric lookup)"
+        fi
+    done
+    if printf '%s\n' "$passwd_rows" | awk -F: '$1 == "sco-relay" { found = 1 } END { exit !found }'; then
+        shadow_row=$(getent shadow "$account") || die "$identity_error (cannot read shadow)"
+        local_shadow=$(getent -s files shadow "$account") || die "$identity_error (cannot read local shadow)"
+        [ "$shadow_row" = "$local_shadow" ] || die "$identity_error (inconsistent local shadow)"
+        printf '%s\n' "$shadow_row" | awk -F: '
+            NF != 9 || $1 != "sco-relay" || $2 !~ /^[!*]/ { bad = 1 }
+            END { exit (NR != 1 || bad) ? 1 : 0 }' || die "$identity_error (password is not locked)"
+        identity_groups=$(id -G "$account") || die "$identity_error (cannot read supplementary groups)"
+        identity_gid=$(printf '%s\n' "$group_rows" | awk -F: '$1 == "sco-relay" { print $3 }')
+        [ "$identity_groups" = "$identity_gid" ] || die "$identity_error (supplementary groups)"
+    fi
+    if printf '%s\n' "$group_rows" | awk -F: '$1 == "sco-relay" { found = 1 } END { exit !found }'; then
+        gshadow_row=$(getent gshadow "$account") || die "$identity_error (cannot read gshadow)"
+        local_gshadow=$(getent -s files gshadow "$account") || die "$identity_error (cannot read local gshadow)"
+        [ "$gshadow_row" = "$local_gshadow" ] || die "$identity_error (inconsistent local gshadow)"
+        # A keyed lookup can return the first matching row while hiding a later
+        # duplicate. Enumerate the full database and require exactly one record
+        # for this service group, identical to both keyed lookups.
+        all_gshadow=$(getent gshadow) || die "$identity_error (cannot enumerate gshadow)"
+        matching_gshadow=$(printf '%s\n' "$all_gshadow" | awk -F: '$1 == "sco-relay"') || die "$identity_error (cannot enumerate gshadow)"
+        [ "$matching_gshadow" = "$gshadow_row" ] || die "$identity_error (duplicate or inconsistent gshadow records)"
+        printf '%s\n' "$gshadow_row" | awk -F: '
+            NF != 4 || $1 != "sco-relay" || $2 !~ /^[!*]/ || $3 != "" ||
+                ($4 != "" && $4 != "sco-relay") { bad = 1 }
+            END { exit (NR != 1 || bad) ? 1 : 0 }' || die "$identity_error (group password, administrators or members)"
+    fi
+}
+validate_identity
+
+# ---- config filesystem preflight -------------------------------------------------------------------------------
+# chmod changes an ACL mask, not named entries; 0600 -> 0640 can revive an unrelated reader.
+# Refuse extended/default ACLs instead of silently repairing operator-managed policy.
+validate_config_policy() {
+    command -v getfacl > /dev/null 2>&1 || die "getfacl is required to check config ACLs (install the acl package)"
+    # The lock lives directly under /run, so its parent needs the same write/ACL safeguards.
+    [ ! -L /run ] && [ -d /run ] || die "unsafe lock parent: /run"
+    for path in /etc /run "$config_dir" "$config"; do
+        [ ! -L "$path" ] || die "unsafe config path: $path"
+        [ -e "$path" ] || continue
+        case $path in
+            "$config") [ -f "$path" ] || die "unsafe config path: $path" ;;
+            *) [ -d "$path" ] || die "unsafe config path: $path" ;;
+        esac
+        metadata=$(stat -c '%u:%h:%a' -- "$path") || die "cannot check config metadata: $path"
+        printf '%s\n' "$metadata" | awk -F: -v file="$([ "$path" = "$config" ] && echo yes || echo no)" '
+            NF != 3 || $1 != 0 || (file == "yes" && $2 != 1) { bad=1 }
+            { mode=$3; g=substr(mode,length(mode)-1,1)+0; o=substr(mode,length(mode),1)+0
+              if (int(g/2)%2 || int(o/2)%2) bad=1 }
+            END { exit (NR != 1 || bad) ? 1 : 0 }
+        ' || die "unsafe config ownership, links or write permissions: $path"
+        acl=$(getfacl -cpn -- "$path") || die "cannot check config ACL: $path"
+        printf '%s\n' "$acl" | awk '
+            /^#/ || /^[[:space:]]*$/ { next }
+            /^user::[rwx-][rwx-][rwx-]$/ { u++; next }
+            /^group::[rwx-][rwx-][rwx-]$/ { g++; next }
+            /^other::[rwx-][rwx-][rwx-]$/ { o++; next }
+            { bad=1 }
+            END { exit (bad || u != 1 || g != 1 || o != 1) ? 1 : 0 }
+        ' || die "unsafe config ACL (extended/default ACLs are unsupported): $path"
+    done
+}
+validate_config_policy
+
+# mkdir is atomic and the checked /run parent is not writable by unprivileged users.
+# Do not remove a pre-existing lock: it may belong to another live installation.
+# A signal between mkdir and recording ownership can leave an empty stale lock.
+if ! (umask 077; mkdir "$lock_dir") 2>/dev/null; then
+    die "cannot acquire installation lock $lock_dir; another install may be running or a stale lock needs inspection"
+fi
+lock_held=yes
 
 # ---- a copy of the tree, checked --------------------------------------------------------------------------------------
 # The build folder is made new by mktemp: owned by root, mode 0700, empty. An existing folder is never used, because a folder
@@ -78,7 +261,7 @@ rm -f "$build_dir/tree.tar"
 #     Ubuntu or Fedora has that kind of group; a group shared between users does not pass.)
 caller=${SUDO_UID:-0}
 find "$src" -printf '%y %U %G %m %p\n' > "$build_dir/files.txt" \
-    || die "cannot list the files of the copy (GNU find is needed). Nothing was changed."
+    || die "cannot list the files of the copy (GNU find is needed). Installation stopped."
 report=$(awk -v caller="$caller" -v src="$src" '
     {
         type = $1; uid = $2; gid = $3; mode = $4
@@ -93,14 +276,15 @@ report=$(awk -v caller="$caller" -v src="$src" '
         if (uid != 0 && uid != caller) { print "HARD owned by another user: " path; exit }
         if (int(other_bits / 2) % 2 == 1) { print "HARD writable by everyone: " path; exit }
         if (int(group_bits / 2) % 2 == 1 && gid != 0 && !(seen[uid " " gid]++)) print "GROUP " uid " " gid " " path
-    }' "$build_dir/files.txt") || die "cannot read the file list of the copy (awk is needed). Nothing was changed."
+    }' "$build_dir/files.txt") || die "cannot read the file list of the copy (awk is needed). Installation stopped."
 
 hard=$(printf '%s\n' "$report" | sed -n 's/^HARD //p' | head -n 1)
 if [ -n "$hard" ]; then
-    die "the source tree is not safe to build as root ($hard). Make a copy only you can write (a fresh git clone as that user is fine; no symbolic links) and run the installer from there. Nothing was changed."
+    die "the source tree is not safe to build as root ($hard). Make a copy only you can write (a fresh git clone as that user is fine; no symbolic links) and run the installer from there. Installation stopped."
 fi
 
-# gid 0, or the owner's private group: named like the owning user, nobody listed in it, nobody else has it as primary group.
+# gid 0, or the owner's private group: matching local and NSS records, named like its owner, with no other primary or
+# supplementary members, no gshadow administrators, and a locked group password.
 # Keep this check inline: the source copy is not yet cleared for group-writable files, so it must not supply executable code.
 # BEGIN PRIVATE_GROUP_CHECK
 private_group() {   # <uid> <gid>
@@ -112,17 +296,44 @@ private_group() {   # <uid> <gid>
     _private_owner_line=$(getent passwd "$_private_uid" 2>/dev/null) || return 1
     _private_owner=$(printf '%s\n' "$_private_owner_line" | awk -F: -v uid="$_private_uid" -v gid="$_private_gid" \
         'NR == 1 && NF == 7 && $1 != "" && $3 == uid && $4 == gid { name = $1 } END { if (NR != 1 || name == "") exit 1; print name }') || return 1
+    _private_files_owner=$(getent -s files passwd "$_private_uid" 2>/dev/null) || return 1
+    [ "$_private_files_owner" = "$_private_owner_line" ] || return 1
     _private_group_line=$(getent group "$_private_gid" 2>/dev/null) || return 1
+    _private_files_group=$(getent -s files group "$_private_gid" 2>/dev/null) || return 1
+    [ "$_private_files_group" = "$_private_group_line" ] || return 1
     printf '%s\n' "$_private_group_line" | awk -F: -v owner="$_private_owner" -v gid="$_private_gid" \
         'NR == 1 && NF == 4 && $1 == owner && $3 == gid && $4 == "" { ok = 1 } END { exit !(NR == 1 && ok) }' || return 1
+    _private_gshadow_line=$(getent gshadow "$_private_owner" 2>/dev/null) || return 1
+    _private_files_gshadow=$(getent -s files gshadow "$_private_owner" 2>/dev/null) || return 1
+    [ "$_private_gshadow_line" = "$_private_files_gshadow" ] || return 1
+    _private_all_gshadow=$(getent gshadow 2>/dev/null) || return 1
+    printf '%s\n' "$_private_all_gshadow" | awk -F: -v owner="$_private_owner" -v expected="$_private_gshadow_line" \
+        'NF != 4 || $1 == "" { bad = 1 }
+         $1 == owner { named++; if ($0 == expected) matched++ }
+         END { exit !(NR > 0 && !bad && named == 1 && matched == 1) }' || return 1
+    printf '%s\n' "$_private_gshadow_line" | awk -F: -v owner="$_private_owner" \
+        'NR == 1 && NF == 4 && $1 == owner && $2 ~ /^[!*]/ && $3 == "" && $4 == "" { ok = 1 }
+         END { exit !(NR == 1 && ok) }' || return 1
     _private_users=$(getent passwd 2>/dev/null) || return 1
+    _private_files_users=$(getent -s files passwd 2>/dev/null) || return 1
     printf '%s\n' "$_private_users" | awk -F: -v owner="$_private_owner" -v uid="$_private_uid" -v gid="$_private_gid" -v expected="$_private_owner_line" '
         NF != 7 || $1 == "" || $3 !~ /^[0-9]+$/ || $4 !~ /^[0-9]+$/ { bad = 1 }
         $1 == owner { named++; if ($0 == expected) matched++ }
         ($3 == uid || $4 == gid) && $1 != owner { bad = 1 }
         END { exit !(NR > 0 && !bad && named == 1 && matched == 1) }' || return 1
+    printf '%s\n' "$_private_files_users" | awk -F: -v owner="$_private_owner" -v uid="$_private_uid" -v gid="$_private_gid" -v expected="$_private_owner_line" '
+        NF != 7 || $1 == "" || $3 !~ /^[0-9]+$/ || $4 !~ /^[0-9]+$/ { bad = 1 }
+        $1 == owner { named++; if ($0 == expected) matched++ }
+        ($3 == uid || $4 == gid) && $1 != owner { bad = 1 }
+        END { exit !(NR > 0 && !bad && named == 1 && matched == 1) }' || return 1
     _private_groups=$(getent group 2>/dev/null) || return 1
+    _private_files_groups=$(getent -s files group 2>/dev/null) || return 1
     printf '%s\n' "$_private_groups" | awk -F: -v owner="$_private_owner" -v gid="$_private_gid" -v expected="$_private_group_line" '
+        NF != 4 || $1 == "" || $3 !~ /^[0-9]+$/ { bad = 1 }
+        $1 == owner { named++; if ($0 == expected) matched++ }
+        $3 == gid && $1 != owner { bad = 1 }
+        END { exit !(NR > 0 && !bad && named == 1 && matched == 1) }' || return 1
+    printf '%s\n' "$_private_files_groups" | awk -F: -v owner="$_private_owner" -v gid="$_private_gid" -v expected="$_private_group_line" '
         NF != 4 || $1 == "" || $3 !~ /^[0-9]+$/ { bad = 1 }
         $1 == owner { named++; if ($0 == expected) matched++ }
         $3 == gid && $1 != owner { bad = 1 }
@@ -134,7 +345,7 @@ groups_found=$(printf '%s\n' "$report" | sed -n 's/^GROUP //p')
 if [ -n "$groups_found" ]; then
     while read -r group_uid group_gid group_path; do
         private_group "$group_uid" "$group_gid" ||
-            die "the source tree is not safe to build as root (writable by a group that is not the private group of its owner: group $group_gid, $group_path). Make a copy only you can write (a fresh git clone as that user is fine) and run the installer from there. Nothing was changed."
+            die "the source tree is not safe to build as root (writable by a group that is not the private group of its owner: group $group_gid, $group_path). Make a copy only you can write (a fresh git clone as that user is fine) and run the installer from there. Installation stopped."
     done <<EOF
 $groups_found
 EOF
@@ -196,6 +407,7 @@ cmake --build "$build_dir/out" --target sco-relay --parallel "$threads"
 # ---- the account, the program, the config ------------------------------------------------------------------------
 # Password authentication is locked and the account has no login shell: it exists only to run this service.
 
+validate_identity
 nologin=$(command -v nologin || true)
 nologin=${nologin:-/usr/sbin/nologin}
 command -v groupadd > /dev/null 2>&1 && command -v useradd > /dev/null 2>&1 \
@@ -208,9 +420,13 @@ command -v passwd > /dev/null 2>&1 \
 ensure_service_identity "$account" "$nologin" \
     || die "the existing or newly created $account identity is not isolated and safe to use"
 
+# Recheck after the trusted build and identity creation; no concurrent administrator
+# changes to identity/policy/config paths are supported during this installation.
+validate_config_policy
 # root owns the folder and the file; the account may enter the folder and read the file; nobody else may.
 validate_config_paths "$config_dir" "$config" || die "the config path or one of its ancestors is not a safe regular path"
 install -d -o root -g "$account" -m 0750 "$config_dir"
+validate_config_policy
 validate_config_paths "$config_dir" "$config" || die "the config path or one of its ancestors changed to an unsafe path"
 install -o root -g root -m 0755 "$build_dir/out/server/sco-relay" "$program"
 

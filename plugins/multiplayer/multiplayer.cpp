@@ -429,7 +429,7 @@ void SetDraft(const char* text) {
     if(n>=sizeof(chat.draft)) return; // longer than the widget service allows: keep the old draft
     std::memcpy(chat.draft,text,n);chat.draft[n]=0;
 }
-// The Send button. Nothing is shown, stored or logged unless sco.net took the message; a refusal says why and keeps the draft.
+// Documented pre-queue refusals preserve the draft; unknown errors remain ambiguous.
 void SendChat() {
     if(!ChatReady()) { std::snprintf(reply,sizeof(reply),"Chat message not sent: no session with compatible players");return; }
     uint8_t message[mpwire::kMaxChat];
@@ -438,11 +438,18 @@ void SendChat() {
     const uint64_t now=Now();
     if(!chat.sent.Room(now)) { std::snprintf(reply,sizeof(reply),"Chat message not sent: at most %u messages in %u seconds",mpwire::kChatSendsPerWindow,static_cast<unsigned>(mpwire::kChatWindowMs/1000));return; }
     const sco_result result=net->send_channel(self,mpwire::kChatChannel,message,static_cast<uint32_t>(size));
-    if(result!=SCO_OK) { std::snprintf(reply,sizeof(reply),"Chat message not sent (%d)",static_cast<int>(result));return; }
+    if(result==SCO_BAD_ARG || result==SCO_NOT_FOUND || result==SCO_UNAVAILABLE || result==SCO_TOO_MANY) {
+        std::snprintf(reply,sizeof(reply),"Chat message not sent (%d)",static_cast<int>(result));return;
+    }
     chat.sent.Add(now);
+    if(result!=SCO_OK) {
+        AddChatRow("You (delivery unconfirmed)",chat.draft);
+        chat.draft[0]=0;
+        std::snprintf(reply,sizeof(reply),"Chat delivery unconfirmed (%d): it may have reached some players. Draft cleared to avoid duplicate retries; this attempt counts toward the send limit.",static_cast<int>(result));return;
+    }
     AddChatRow("You",chat.draft);
     chat.draft[0]=0;
-    std::snprintf(reply,sizeof(reply),"Chat message sent. It is not encrypted, and players on older plugin builds do not see it.");
+    std::snprintf(reply,sizeof(reply),"Chat message sent to the outgoing queue; delivery is not confirmed. It is not encrypted, and players on older plugin builds do not see it.");
 }
 void NoteBadRelay(const char* what) {
     // One line per session, then only the count (shown by multiplayer.status): a broken or foreign server cannot flood mod.log.

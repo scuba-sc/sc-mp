@@ -21,7 +21,8 @@ group's GID as the primary group, a non-login shell, `/nonexistent` home, no sup
 group sharing the UID or GID. It also requires `passwd -S sco-relay` to report status `L`; that status does not prove
 the absence of a password hash or other authentication mechanisms. It refuses an existing account without its dedicated
 group before creating either identity, and refuses a group already used as another account's primary group before creating
-the service user. The checks require successful, well-formed targeted lookups and enumeration that agree through the host's
+the service user. The service group must also have a matching local gshadow entry with a locked group password and no
+administrators or other members. The checks require successful, well-formed targeted lookups and enumeration that agree through the host's
 NSS `getent` and `id` configuration; they cannot verify entries those backends do not expose or prevent a concurrent administrator
 changing them.
 It also stops if `/etc/sco-relay` or the config file path, including any existing ancestor, is a symbolic link, or if the
@@ -43,29 +44,91 @@ It builds only the copy. The check refuses, and changes nothing:
 - a file or folder owned by anyone but root and the user who ran `sudo`;
 - a file or folder writable by everyone;
 - a file or folder writable by a group, unless the group is root's (gid 0) or the owner's private group: a group named like the
-  owning user, with nobody listed in it, that is no other account's primary group. Targeted lookups must agree with successful
-  user and group enumeration; failed, malformed or inconsistent results are refused.
+  owning user, with no other primary or supplementary members, no gshadow administrators, and a locked group password. Targeted
+  lookups must agree with successful user, group and gshadow enumeration; failed, malformed or inconsistent results are refused.
 
 This catches common mistakes: a clone with loose permissions, a stray symlink. It does not protect you from someone who
 already controls your copy, because root still builds and runs what is in it. So run the installer only from a copy you made
-and trust.
+and trust. This is not an atomic snapshot: no other process may modify the source during copying.
+Source hardlinks are copied into the private extraction tree, not linked back to the original inodes;
+GNU tar's default here does not preserve source ACLs. The checks describe the extracted copy, not
+who could have changed the original tree earlier. Numeric aliases and gshadow membership/passwords
+are checked when a source group is treated as private.
+
+### Trust boundary and config filesystem policy
+
+The operator must trust root, the sudo caller and source, executable search path/build tools,
+OS/NSS implementations, and root-controlled authorization policy. A locked system UID is not a
+proof of provenance or lack of privilege: a reused UID may retain processes, open descriptors,
+owned files, capabilities, sudoers/polkit grants or application access. Check its history yourself;
+use a clean dedicated account/host if that history is unknown. The installer deliberately does not
+attempt to certify all host authorization state or defend against compromised root.
+
+Config checks run before the build directory/package/account mutations and again before file
+installation. `/etc` and existing config paths must be root-owned, not group/other writable, not
+symlinks, and contain only base POSIX ACL entries; the config must have exactly one hardlink.
+GNU `stat` and `getfacl` are required (`getfacl` comes from the `acl` package); missing ACL tooling
+fails closed before mutation, not by installing it first. Extended ACLs, including masked named
+readers, and default ACLs are refused rather than silently rewritten. In particular, chmod 0640
+would otherwise revive a masked named reader; inherited default ACLs could give new config files
+unintended readers. Existing secrets already exposed are not made secret again by this check:
+rotate them after correcting permissions.
+
+Before building or changing accounts or installed files, the installer atomically creates
+`/run/sco-relay-installer.lock`; another instance refuses while that directory exists. The `/run`
+parent must be a real root-owned directory, not group/other writable, with only base ACL entries.
+On normal exit and handled signals after the script records ownership it attempts to remove the
+lock. A cleanup failure, a signal during the brief acquisition window, or an uncatchable termination
+such as SIGKILL can leave it behind: first verify no installer is running, then an administrator
+may remove the empty lock directory or reboot. The installer never removes an existing lock on
+another run's behalf.
+
+Serialize installation with administrative policy/account/config edits. The installer lock does
+not lock NSS, sudoers, userdb or filesystem policy and does not eliminate a privileged check/use
+race. A concurrent administrator can change these after the last check; that actor is inside this
+trust boundary. Failures after installation starts can leave a partially updated installation and
+require an operator to inspect it before retrying. No cross-host policy scan is represented as a
+guarantee.
 
 ## What it does, in this order
 
-1. **Copies and checks the tree** (above), so that what is checked is what is built.
-2. **Checks the tools.** The build needs cmake 3.20 or newer, a C++20 compiler (`g++`), `make`, and the CA certificates
+1. **Validates existing identities before any mutation**, including temporary build files or package installation.
+   Reuse requires `sco-relay` UID/GID inside the configured `SYS_UID_MIN/MAX` and `SYS_GID_MIN/MAX`
+   ranges in `/etc/login.defs`, no numeric aliases, matching primary group, no supplementary groups,
+   a locked password, `/nonexistent` home and a `nologin` or `false` shell. The group must have no other explicit or
+   primary members, no administrators and a locked group password. Unsafe collisions are refused, never repaired.
+   Supported NSS policy is exactly `files` or `files systemd` for passwd/group/shadow/gshadow
+   (and initgroups when declared). This includes common plain Ubuntu/Debian configurations, **not**
+   arbitrary configurations on those distributions. LDAP, SSSD, compat, action clauses (including
+   `[SUCCESS=merge]`) and other mixed sources are refused. With `systemd`, only its PID 1 DynamicUser
+   provider is allowed: static userdb records and other sockets in the documented userdb directories
+   are refused, including userdbd/homed/machined. The complete local records must match NSS resolution
+   by both name and number; local shadow/gshadow records must match too.
+   System range defaults follow shadow-utils: minima 101, maxima `UID_MIN - 1`/`GID_MIN - 1`
+   (regular minima default 1000). Explicit settings must be unique canonical decimal numbers;
+   octal/hex and malformed or inverted ranges fail closed. All accepted ranges must stay below 61184,
+   the beginning of systemd's DynamicUser range. Changing ranges can therefore block a later upgrade.
+   See [login.defs(5)](https://man7.org/linux/man-pages/man5/login.defs.5.html) and
+   [nss-systemd(8)](https://www.freedesktop.org/software/systemd/man/latest/nss-systemd.html).
+   The check runs again after the build and after account creation, before file installation.
+   Refusal after creation can leave the new account/group; there is no rollback or repair.
+   Account databases, NSS configuration and userdb providers must not be edited concurrently.
+   These shape checks cannot certify arbitrary sudoers/polkit rules, ACLs or previous use
+   of a UID: run only on a host whose root-controlled authorization policy you trust.
+2. **Copies and checks the tree** (above), so that what is checked is what is built.
+3. **Checks the tools.** The build needs cmake 3.20 or newer, a C++20 compiler (`g++`), `make`, and the CA certificates
    (so that cmake can check the certificate of its download; it looks for the bundle where Debian, Ubuntu, Alpine, Fedora,
    RHEL, openSUSE and SLES keep it). On Debian and Ubuntu it installs what is missing with `apt-get`. On any other
    distribution it names what is missing and stops without changing anything; install those with your package manager and
    run it again.
-3. **Builds only the relay** from the copy, with cmake's Unix Makefiles generator, in the new folder (every run builds from
+4. **Builds only the relay** from the copy, with cmake's Unix Makefiles generator, in the new folder (every run builds from
    scratch; a few minutes). No tests and no plugin are built. The build downloads the sco-core SDK files that
    [cmake/ScoSdk.cmake](../../cmake/ScoSdk.cmake) and [cmake/ScoCoreSource.cmake](../../cmake/ScoCoreSource.cmake) pin, and
    refuses them unless their SHA-256 matches the one kept in this repository. That download and `apt-get` are the only
    network use; the relay itself opens one UDP port and makes no other connection.
-4. **Installs** the program, the account and the config (the table below).
-5. **Tells you** where the passphrase is, which UDP port to open, and who can join. It never prints the passphrase.
-6. **Runs it.** With systemd running, it enables the service so that it comes back after a reboot, and starts it (a second
+5. **Installs** the program, the account and the config (the table below).
+6. **Tells you** where the passphrase is, which UDP port to open, and who can join. It never prints the passphrase.
+7. **Runs it.** With systemd running, it enables the service so that it comes back after a reboot, and starts it (a second
    run restarts it, so the new program is the one that runs). Without systemd it runs the relay in the foreground, as said above.
 
 | Path | What | Who |

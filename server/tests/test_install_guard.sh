@@ -29,6 +29,11 @@ mock_group=""
 mock_groups_all=""
 mock_user=""
 mock_passwd_all=""
+mock_gshadow=""
+mock_gshadows_all=""
+mock_files_passwd_all=""
+mock_files_groups_all=""
+mock_files_gshadows_all=""
 mock_id_uid=""
 mock_id_gid=""
 mock_groups=""
@@ -46,9 +51,18 @@ chown_calls=0
 chmod_calls=0
 
 getent() {
-    case "$1" in
-        group)
-            if [ "$#" -eq 2 ]; then
+    provider=effective
+    if [ "${1:-}" = -s ]; then
+        [ "${2:-}" = files ] || return 2
+        provider=files
+        shift 2
+    fi
+    [ "$#" -ge 1 ] && [ "$#" -le 2 ] || return 2
+    table=$1
+    key=${2:-}
+    case "$table" in
+        group|passwd|gshadow)
+            if [ "$provider" = effective ] && [ "$table" = group ] && [ -n "$key" ]; then
                 if [ "$mock_group_lookup_exit" -ne 0 ]; then
                     [ -z "$mock_group" ] || printf '%s\n' "$mock_group"
                     return "$mock_group_lookup_exit"
@@ -57,11 +71,7 @@ getent() {
                 printf '%s\n' "$mock_group"
                 return 0
             fi
-            printf '%s\n' "$mock_groups_all"
-            return "$mock_group_enum_exit"
-            ;;
-        passwd)
-            if [ "$#" -eq 2 ]; then
+            if [ "$provider" = effective ] && [ "$table" = passwd ] && [ -n "$key" ]; then
                 if [ "$mock_user_lookup_exit" -ne 0 ]; then
                     [ -z "$mock_user" ] || printf '%s\n' "$mock_user"
                     return "$mock_user_lookup_exit"
@@ -70,8 +80,29 @@ getent() {
                 printf '%s\n' "$mock_user"
                 return 0
             fi
-            printf '%s\n' "$mock_passwd_all"
-            return "$mock_user_enum_exit"
+            case "$provider:$table" in
+                effective:group) rows=$mock_groups_all ;;
+                effective:passwd) rows=$mock_passwd_all ;;
+                effective:gshadow) rows=$mock_gshadows_all ;;
+                files:group) rows=${mock_files_groups_all:-$mock_groups_all} ;;
+                files:passwd) rows=${mock_files_passwd_all:-$mock_passwd_all} ;;
+                files:gshadow) rows=${mock_files_gshadows_all:-$mock_gshadows_all} ;;
+            esac
+            if [ -n "$key" ]; then
+                case "$table" in
+                    gshadow) filtered=$(printf '%s\n' "$rows" | awk -F: -v key="$key" '$1 == key') ;;
+                    *) filtered=$(printf '%s\n' "$rows" | awk -F: -v key="$key" '$1 == key || $3 == key') ;;
+                esac
+                [ -n "$filtered" ] || return 2
+                printf '%s\n' "$filtered"
+                return 0
+            fi
+            printf '%s\n' "$rows"
+            case "$provider:$table" in
+                effective:group) return "$mock_group_enum_exit" ;;
+                effective:passwd) return "$mock_user_enum_exit" ;;
+                *) return 0 ;;
+            esac
             ;;
     esac
     return 2
@@ -174,6 +205,12 @@ $mock_user"
     mock_group='owner:x:1001:'
     mock_groups_all="root:x:0:
 $mock_group"
+    mock_gshadow='owner:!::'
+    mock_gshadows_all="root:!::
+$mock_gshadow"
+    mock_files_passwd_all=$mock_passwd_all
+    mock_files_groups_all=$mock_groups_all
+    mock_files_gshadows_all=$mock_gshadows_all
 }
 expect_private_rejected() {
     label=$1
@@ -238,6 +275,23 @@ set_private_identity
 mock_passwd_all="$mock_passwd_all
 other:x:1002:1001:Other:/home/other:/bin/sh"
 expect_private_rejected "a group used by another user's primary identity"
+set_private_identity
+mock_files_passwd_all="$mock_files_passwd_all
+alias:x:1001:1002:Alias:/home/alias:/bin/sh"
+expect_private_rejected "a local passwd alias hidden from effective enumeration"
+set_private_identity
+mock_files_groups_all="$mock_files_groups_all
+alias:x:1001:"
+expect_private_rejected "a local group alias hidden from effective enumeration"
+set_private_identity
+mock_gshadow='owner:!:admin:member'
+mock_gshadows_all="root:!::
+$mock_gshadow"
+mock_files_gshadows_all=$mock_gshadows_all
+expect_private_rejected "gshadow administrators and members"
+set_private_identity
+mock_files_gshadows_all='owner:!:admin:'
+expect_private_rejected "an effective gshadow entry that disagrees with files"
 
 set_safe_identity
 mock_group=

@@ -88,6 +88,26 @@ if(NOT _have)
 endif()
 message(STATUS "sco-core source kit: ${_sco_cs_zip_name} SHA-256 verified")
 
+# This check applies even when tests are disabled and on Windows. The default is the immutable stable release;
+# the separately reviewed development pair can be selected explicitly for coordinated compatibility work.
+set(SC_MP_NET_BOUNDARY_PROFILE "stable-2.4.0" CACHE STRING "Reviewed relay network boundary profile (stable-2.4.0 or dev-1b)")
+set_property(CACHE SC_MP_NET_BOUNDARY_PROFILE PROPERTY STRINGS stable-2.4.0 dev-1b)
+if(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "stable-2.4.0")
+  set(_boundary_sdk_sha "0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc")
+  set(_boundary_source_sha "df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51")
+  set(_boundary_sums "0731afbc8632996990179950e60e03c2e9f1d263bf9f6d96f483875a7de73d78")
+elseif(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "dev-1b")
+  set(_boundary_sdk_sha "bb52b8bf1cab5aea09939e68a387705149411ce6c8af48e3f3f2576fc8a83c31")
+  set(_boundary_source_sha "5239c2820049eaae43185272771085eb443871430b2ef0cff17b07fc72fba166")
+  set(_boundary_sums "a59ef54b6ac01a574f612f224a036ece8991596f8255f54446a11d15ac515fbc")
+else()
+  message(FATAL_ERROR "Unknown SC_MP_NET_BOUNDARY_PROFILE: ${SC_MP_NET_BOUNDARY_PROFILE}")
+endif()
+if(NOT SCO_SDK_VERSION STREQUAL "2.4.0" OR NOT SCO_SDK_SHA256 STREQUAL _boundary_sdk_sha OR
+   NOT SCO_CORE_SOURCE_SHA256 STREQUAL _boundary_source_sha)
+  message(FATAL_ERROR "SDK archive pair does not match the reviewed ${SC_MP_NET_BOUNDARY_PROFILE} network boundary profile")
+endif()
+
 # The extraction folder is keyed by the verified hash, so a different archive never reuses it.
 if(NOT EXISTS "${SCO_CORE_SOURCE_ROOT}/SHA256SUMS")
   file(REMOVE_RECURSE "${_sco_cs_src_parent}")
@@ -96,6 +116,10 @@ if(NOT EXISTS "${SCO_CORE_SOURCE_ROOT}/SHA256SUMS")
     message(FATAL_ERROR "sco-core source kit archive did not contain ${_sco_cs_name}/SHA256SUMS")
   endif()
 endif()
+
+# Validate the complete kit before executing its CMakeLists.
+include("${CMAKE_CURRENT_LIST_DIR}/VerifyExtractedKit.cmake")
+sc_mp_verify_extracted_kit("${SCO_CORE_SOURCE_ROOT}" "${_boundary_sums}" "core-source")
 
 # The kernel only: no Star Citizen game pack, and none of the kit's own tests (the kit's build is the one the
 # kit's authors run; here it is a dependency). SCO_WERROR keeps the kit's own setting: warnings in its code are
