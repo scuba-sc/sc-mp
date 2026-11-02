@@ -1,15 +1,20 @@
 # ADR 0005 — synthetic authority as an SDK service consumer
 
-Status: implemented local functional milestone. Base: sc-mp
-`a5b1efc1d170f8dfed3c1b28b53a56d610b5b129`; SDK input: merged core
-`7ee83fa95680aa482d8b160987b472547a67b888`. Not run in game.
+Status: implemented synthetic consumer milestone. Base: sc-mp PR #17 at
+`4f15a1fb93eaeca10c2585fc400480b18c66f432`; SDK input: published `sdk-v2.4.0`
+`core-source`, source commit `6106fa3639cbcc28f78a1ded8de2707de019f4d3`,
+archive SHA-256 `df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51`,
+inventory SHA-256 `0731afbc8632996990179950e60e03c2e9f1d263bf9f6d96f483875a7de73d78`.
+The earlier merged development line at `7ee83fa95680aa482d8b160987b472547a67b888`
+is not the released package input used by this build. Not run in game.
 
 The previous process prototype drives `sco::net::Core` directly. That proves a
 bounded synthetic authority policy over authenticated transport, but does not
 prove that a plugin can implement the same policy using the packaged service ABI.
-The next milestone puts the policy inside a built-in plugin loaded by the real
-packaged host. It uses `sco_api` service lookup, live plugin ownership, `sco.net`
-channels, and host-tick event delivery. The host alone starts/stops the network.
+This milestone puts the policy inside a built-in plugin loaded by a standalone
+SDK host fixture. It uses `sco_api` service lookup, loader-owned plugin
+ownership, `sco.net` channels, and host-tick event delivery. The fixture host
+alone starts/stops the network; it is not the product/game host.
 
 ## Composition
 
@@ -124,6 +129,8 @@ leak reporting for those children. No Windows/native module qualification is mad
 Keep the engine's transport sandbox as an integration customer of this seam. Its
 state-only private-session mock is not authenticated multiplayer evidence.
 Offline integration still needs explicit local consent, positive game admission
-and an executing provider. Native/game validation is deferred to the human; no
-registry capability is promoted by these synthetic tests. MP #16's inherited
-provenance decisions remain pending and independent of this experiment.
+and an executing provider. Native/game validation remains unperformed; no
+registry capability is promoted by these synthetic tests. The maintainer stated
+that they own rights to code in sc-mp PRs #14–#20. `PROVENANCE.md` records this
+as an owner statement, not an independent legal determination; existing
+contributor credit and source records remain in place.
