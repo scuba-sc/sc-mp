@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The settings of sco-relay and the reader of the config file they come from (server/config.h).
 // One table lists the settings; each has a small function that reads its value or says what is wrong.
-#include "server/config.h"
-#include "server/address_rule.h"
+#include "config.h"
+#include "address_rule.h"
 #include <cerrno>
 #include <cstdio>
 #include <cstring>

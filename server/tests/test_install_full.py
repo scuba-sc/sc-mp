@@ -140,6 +140,7 @@ class FullInstaller(IdentitySandbox):
             root = Path(temporary) / 'runner' / 'sc-mp'
             for relative in ('CMakeLists.txt', 'server/main.cpp', 'server/sco-relay.example.conf',
                              'server/deploy/sco-relay.service', 'server/deploy/install.sh',
+                             'server/deploy/install_guard.sh',
                              'server/tests/test_install_identity.py', 'server/tests/test_install_full.py'):
                 destination = root / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
@@ -155,7 +156,7 @@ class FullInstaller(IdentitySandbox):
         self.source = self.base / 'source'
         (self.source / 'server' / 'deploy').mkdir(parents=True)
         for relative in ('CMakeLists.txt', 'server/main.cpp', 'server/sco-relay.example.conf',
-                         'server/deploy/sco-relay.service'):
+                         'server/deploy/sco-relay.service', 'server/deploy/install_guard.sh'):
             origin = INSTALLER.parents[2] / relative
             shutil.copyfile(origin, self.source / relative)
         # Relocate literal filesystem accesses, retaining the real shell flow.
@@ -405,6 +406,28 @@ class FullInstaller(IdentitySandbox):
         result = self.run_installer()
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_password_status_must_be_locked_and_verifiable(self):
+        for status in ('sco-relay P 20000 0 99999 7 -1',
+                       'sco-relay ? 20000 0 99999 7 -1',
+                       'sco-relay L 20000 0 99999 7 -1\nsco-relay L 20000 0 99999 7 -1'):
+            with self.subTest(status=status):
+                self.data['passwd_status_output'] = status
+                result = self.run_installer()
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertIn('passwd -S must report exactly one locked (L) status', result.stderr)
+                log = self.log.read_text()
+                self.assertIn('passwd -S sco-relay', log)
+                self.assertNotIn('install ', log)
+
+        self.data.pop('passwd_status_output', None)
+        self.data['passwd_command_failure'] = True
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn('cannot verify the sco-relay password status', result.stderr)
+        log = self.log.read_text()
+        self.assertIn('passwd -S sco-relay', log)
+        self.assertNotIn('install ', log)
+
     def test_fresh_install_creates_and_validates_identity(self):
         self.data['passwd'].pop()
         self.data['group'].pop()
@@ -419,7 +442,7 @@ class FullInstaller(IdentitySandbox):
         self.data['after_create'] = {'groups': '450 27'}
         result = self.run_installer()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('supplementary groups', result.stderr)
+        self.assertIn('belong only to its dedicated group', result.stderr)
         self.assertNotIn('Nothing was changed', result.stderr)
         self.assertIn('useradd --system', self.log.read_text())
         self.assertNotIn('install ', self.log.read_text())

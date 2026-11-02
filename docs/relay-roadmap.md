@@ -23,8 +23,9 @@ It builds on #126 and starts from `main` at `4db58d2` (0.7.8). I can split it in
 
 Tests added and run on Linux and Windows: the workflow test with the golden bytes of the new messages (266 checks); a motion test that runs the unmodified #126 module and this one on the same jittered, lossy 10 Hz path, plus buffer cases (548 checks; freezes 18 -> 1, largest step 2.71 m -> 1.02 m in one run); and, outside this PR, a join test against a real sco-relay over loopback UDP with synthetic game providers (239 checks).
 
-The local builds used an SDK packaged from sco-core `82462b0`; `main` pinned SDK 2.4.0 release candidate 1
-(`sdk-v2.4.0-rc.1`) and now pins release candidate 2 (`sdk-v2.4.0-rc.2`), which CI builds against.
+The local builds used an SDK packaged from sco-core `82462b0`; `main` originally pinned SDK 2.4.0 release candidate 1
+(`sdk-v2.4.0-rc.1`) and then release candidate 2 (`sdk-v2.4.0-rc.2`). The current consumer pin is the immutable
+SDK 2.4.0 release (`sdk-v2.4.0`), which CI builds against.
 
 Not tested: nothing was run in game. The production game shell refuses Join today (no admission collector), so an in-game join through a relay is not possible yet.
 

@@ -13,6 +13,9 @@ class SourcePrivateGroup(full.FullInstaller):
     def setUp(self):
         super().setUp()
         # Simulate a root-owned source writable by root's private group, gid 100.
+        # The passwd primary GID must agree with that group record; otherwise the
+        # installer correctly rejects it as an ordinary group, not root's private one.
+        self.data['passwd'][0] = 'root:x:0:100:root:/root:/bin/sh'
         self.data['group'][0] = 'root:x:100:'
         self.data['gshadow'].append('root:!::')
         self.data['source_records'] = ['d 0 100 770 {src}']

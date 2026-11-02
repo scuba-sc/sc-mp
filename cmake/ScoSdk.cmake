@@ -1,8 +1,8 @@
 # Fetches the published sco-core SDK archive, verifies its SHA-256 and extracts it under the build tree.
 #
 #   SCO_SDK_VERSION       SDK version consumed by sc-mp (the archive is sco-sdk-<version>.zip)
-#   SCO_SDK_RELEASE_TAG   the sco-core release that holds the archive. SDK 2.4.0 is published as release
-#                         candidate 2, tag sdk-v2.4.0-rc.2; the final sdk-v2.4.0 has not been published yet
+#   SCO_SDK_RELEASE_TAG   the sco-core release that holds the archive. SDK 2.4.0 is published at
+#                         sdk-v2.4.0; release assets are immutable and source commit 6106fa3 is signed.
 #   SCO_SDK_ARCHIVE_DIR   directory holding a local copy of the release assets (sco-sdk-<version>.zip);
 #                         when set, the archive is taken from there instead of downloaded. Either way
 #                         the archive must match SCO_SDK_SHA256 or configure fails.
@@ -11,21 +11,21 @@
 # never copied into this repository, and no sibling sco-core checkout is read.
 
 set(SCO_SDK_VERSION "2.4.0" CACHE STRING "sco-core SDK version consumed by sc-mp")
-set(SCO_SDK_RELEASE_TAG "sdk-v2.4.0-rc.2" CACHE STRING "sco-core release tag that holds the SDK archives")
+set(SCO_SDK_RELEASE_TAG "sdk-v2.4.0" CACHE STRING "sco-core release tag that holds the SDK archives")
 set(SCO_SDK_ARCHIVE_DIR "" CACHE PATH "Local directory with the release assets of SCO_SDK_RELEASE_TAG (optional)")
-# From the release SHA256SUMS, line for sco-sdk-<version>.zip (sdk-v2.4.0-rc.2 release). Bump together with
+# From the immutable sdk-v2.4.0 release asset digest for sco-sdk-<version>.zip. Bump together with
 # SCO_SDK_VERSION and SCO_SDK_RELEASE_TAG.
-set(SCO_SDK_SHA256 "51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e"
+set(SCO_SDK_SHA256 "0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc"
     CACHE STRING "SHA-256 of sco-sdk-<version>.zip")
 
 # A relay build uses one reviewed pair. Validate the SDK side before unpacking
 # it or using its headers; the source-kit side is checked in ScoCoreSource.cmake.
 if(SC_MP_BUILD_RELAY)
-  set(SC_MP_NET_BOUNDARY_PROFILE "rc2" CACHE STRING "Reviewed relay network boundary profile (rc2 or dev-1b)")
-  set_property(CACHE SC_MP_NET_BOUNDARY_PROFILE PROPERTY STRINGS rc2 dev-1b)
-  if(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "rc2")
-    set(_relay_sdk_sha "51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e")
-    set(_relay_sdk_sums "6c30f314fe7e1016801eeb333851243fc705d47500c2ce6034f20c34835bdc8c")
+  set(SC_MP_NET_BOUNDARY_PROFILE "stable-2.4.0" CACHE STRING "Reviewed relay network boundary profile (stable-2.4.0 or dev-1b)")
+  set_property(CACHE SC_MP_NET_BOUNDARY_PROFILE PROPERTY STRINGS stable-2.4.0 dev-1b)
+  if(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "stable-2.4.0")
+    set(_relay_sdk_sha "0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc")
+    set(_relay_sdk_sums "1ea4dc9743f1d7bef959c8d80df068139b23de3997dc71590498ecc9ec57910b")
   elseif(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "dev-1b")
     set(_relay_sdk_sha "bb52b8bf1cab5aea09939e68a387705149411ce6c8af48e3f3f2576fc8a83c31")
     set(_relay_sdk_sums "ded9ed96c374bf1f0fec75a361a656261416be5ac03f0846d61210cd953f2e55")

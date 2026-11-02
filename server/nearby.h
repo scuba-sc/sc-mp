@@ -15,8 +15,8 @@
 //
 // This class holds the positions and the counters; it does not send anything itself. The caller gives
 // OnUp a function that queues one copy for one slot, so the rule can be tested without a network.
-#include "server/net_boundary.h"
-#include "server/roster.h"
+#include "net_boundary.h"
+#include "roster.h"
 #include <cstddef>
 #include <cstdint>
 #include <functional>

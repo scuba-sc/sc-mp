@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Nearby-only forwarding: the code behind server/nearby.h, which decides who gets a copy of a pose.
 // The rule and its settings are described in server/nearby.h.
-#include "server/nearby.h"
-#include "plugins/multiplayer/relay_wire.h"
+#include "nearby.h"
+#include "../plugins/multiplayer/relay_wire.h"
 #include <vector>
 
 namespace sco::relay {
