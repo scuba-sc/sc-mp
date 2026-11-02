@@ -124,10 +124,11 @@ echo ' ' >> "$dir/COMPATIBILITY.json"
 run_checker "$dir"
 check "changed source metadata fails" '[ "$status" -eq 1 ] && says "COMPATIBILITY.json"'
 
-# When the other reviewed kit is available, exercise actual cross-profile mixes,
-# including the metadata. This supplements the always-run mutation cases above.
+# When the other reviewed kit is available, exercise actual cross-profile mixes
+# in the files that differ between stable 2.4.0 and the older dev-1b source.
+# The UDP source/header hashes are the same in these two profiles.
 if [ -n "$other" ]; then
-    for file in COMPATIBILITY.json include/sco/net/udp.h src/net/udp_posix.cpp src/net/udp_win.cpp; do
+    for file in COMPATIBILITY.json src/net/core.cpp; do
         dir=$(copy_of_the_files "mixed-$(basename "$file")")
         if [ ! -f "$other/$file" ] || cmp -s "$core/$file" "$other/$file"; then
             bad "cross-profile fixture differs: $file"

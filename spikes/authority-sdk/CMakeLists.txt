@@ -3,8 +3,10 @@ project(authority_sdk_spike LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(SCO_GAME_SC OFF CACHE BOOL "" FORCE)
 set(SCO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-if(NOT SDK_ROOT)
-  message(FATAL_ERROR "Pass SDK_ROOT pointing to checksum-verified published core-source kit")
+# This standalone experiment does not download or authenticate SDK_ROOT. The caller must verify the archive SHA-256
+# and extracted inventory before configuring; see docs/adr-0002-published-sdk-authority.md.
+if(NOT SDK_ROOT OR NOT EXISTS "${SDK_ROOT}/CMakeLists.txt")
+  message(FATAL_ERROR "Pass SDK_ROOT pointing to a published core-source kit whose archive and inventory were verified externally; this experiment does not verify it")
 endif()
 add_subdirectory("${SDK_ROOT}" sdk EXCLUDE_FROM_ALL)
 add_executable(authority-cli main.cpp)

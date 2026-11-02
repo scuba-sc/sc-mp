@@ -12,6 +12,15 @@ Fresh clones verified against remote main:
 
 Current sc-mp `cmake/ScoSdk.cmake:13–19` pins 2.4.0 rc.2, public archive SHA-256 `51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e`. `cmake/ScoCoreSource.cmake:26–28` pins core-source `ddd1d75055f6b0efd69af4ac2eff6a18a5ff177f87cb28c938af3a625befbbb8`. Both archives downloaded and verified against release.json; all downloaded asset digests and exact paths are in `../evidence/manifest.json` relative to clone root (the manifest is at the scratch root's evidence/). SDK source is extracted under `sdk/sco-sdk-core-source-2.4.0` at the scratch root. Nothing links the fresh sco-core clone.
 
+**Trust precondition for reproduction:** the standalone
+`spikes/authority-sdk/CMakeLists.txt` does not download, hash, or verify the
+contents of `SDK_ROOT`; it only requires a kit directory with `CMakeLists.txt`.
+The historical receipt records the expected archive digests, but the CMake
+configure step does not enforce them or verify the extracted inventory. A
+reproduction must repeat those external checks and record the exact archive
+and inventory hashes. Configuring the spike successfully is not evidence that
+its SDK input was authenticated or self-verified.
+
 Previous `$SCRATCH/sc-mp-authority-foundation/docs/adr-0001-synthetic-authority-spike.md` was read as historical reference only; its old baseline/integration claims are not inherited. It remains untouched. Read-only chat candidate `02edf442479e3bb0857ef062d6c61f9b0d05124a` and installer candidate `917b3fd3201a9325c56efbf048d94ecf66bef322` have the same rc.2 public/core-source pins. This additive spike changes none of their files; no runtime composition/integration test with those candidates has been performed. No historical engine checkout substitutes for them. No failed owner-drain dependency is used.
 
 ## Decision and boundary
