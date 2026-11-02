@@ -3,7 +3,7 @@ name: authority-session
 on:
   pull_request:
   push:
-    branches: [roadmap/authoritative-session-20261031]
+    branches: [roadmap/authoritative-session-20261031, roadmap/authority-service-20261031]
 
 permissions:
   contents: read
@@ -93,3 +93,13 @@ jobs:
             -DCMAKE_CXX_COMPILER=clang++-18 -DSDK_ROOT="$SDK_ROOT"
           cmake --build "$RUNNER_TEMP/authority-build" --target authority-session authority-model-tests --parallel 2
           ctest --test-dir "$RUNNER_TEMP/authority-build" --output-on-failure --timeout 120
+      - name: Build and test SDK service consumer
+        shell: bash
+        run: |
+          set -eu
+          cmake -S spikes/authority-service -B "$RUNNER_TEMP/authority-service-build" \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_CXX_COMPILER=clang++-18 -DSDK_ROOT="$SDK_ROOT"
+          cmake --build "$RUNNER_TEMP/authority-service-build" \
+            --target authority-service authority-service-fixture-tests --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/authority-service-build" --output-on-failure --timeout 180
