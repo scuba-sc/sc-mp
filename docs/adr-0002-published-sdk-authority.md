@@ -1,6 +1,9 @@
 # ADR 0002 — Published-SDK synthetic authority experiment
 
-Status: **PARTIAL — scratch experiment, not product integration approval**.
+Status: **HISTORICAL PARTIAL — 2026-10-30 scratch experiment, not product
+integration approval**. The pins and results below describe that isolated
+experiment, not the current sc-mp SDK consumption profile. Current production
+pins are recorded in `cmake/ScoSdk.cmake` and `cmake/ScoCoreSource.cmake`.
 
 ## Exact inputs
 
@@ -10,7 +13,25 @@ Fresh clones verified against remote main:
 - sco-core `5b010dc0697535f10e9264235494b667ea850ea6` (reference only, not linked).
 - Latest published SDK `sdk-v2.4.0-rc.2`, dereferenced tag and release.json source `844e136ccb280ad8cb43f73bc43c9447e8f6799d`.
 
-Current sc-mp `cmake/ScoSdk.cmake:13–19` pins 2.4.0 rc.2, public archive SHA-256 `51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e`. `cmake/ScoCoreSource.cmake:26–28` pins core-source `ddd1d75055f6b0efd69af4ac2eff6a18a5ff177f87cb28c938af3a625befbbb8`. Both archives downloaded and verified against release.json; all downloaded asset digests and exact paths are in `../evidence/manifest.json` relative to clone root (the manifest is at the scratch root's evidence/). SDK source is extracted under `sdk/sco-sdk-core-source-2.4.0` at the scratch root. Nothing links the fresh sco-core clone.
+At the experiment's 2026-10-30 baseline, sc-mp `57ac2fd` pinned 2.4.0 rc.2,
+public archive SHA-256
+`51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e`; its
+core-source archive SHA-256 was
+`ddd1d75055f6b0efd69af4ac2eff6a18a5ff177f87cb28c938af3a625befbbb8`. Both
+archives were downloaded and verified against `release.json`; asset digests
+and paths are in `../evidence/manifest.json` relative to the clone root. The
+SDK source was extracted under `sdk/sco-sdk-core-source-2.4.0` at the scratch
+root. Nothing links the fresh sco-core clone. These RC2 values are retained as
+historical experiment inputs, not current pins.
+
+**Trust precondition for reproduction:** the standalone
+`spikes/authority-sdk/CMakeLists.txt` does not download, hash, or verify the
+contents of `SDK_ROOT`; it only requires a kit directory with `CMakeLists.txt`.
+The historical receipt records the expected archive digests, but the CMake
+configure step does not enforce them or verify the extracted inventory. A
+reproduction must repeat those external checks and record the exact archive
+and inventory hashes. Configuring the spike successfully is not evidence that
+its SDK input was authenticated or self-verified.
 
 Previous `$SCRATCH/sc-mp-authority-foundation/docs/adr-0001-synthetic-authority-spike.md` was read as historical reference only; its old baseline/integration claims are not inherited. It remains untouched. Read-only chat candidate `02edf442479e3bb0857ef062d6c61f9b0d05124a` and installer candidate `917b3fd3201a9325c56efbf048d94ecf66bef322` have the same rc.2 public/core-source pins. This additive spike changes none of their files; no runtime composition/integration test with those candidates has been performed. No historical engine checkout substitutes for them. No failed owner-drain dependency is used.
 
