@@ -1,7 +1,8 @@
 # ADR 0005 — synthetic authority as an SDK service consumer
 
-Status: implemented synthetic consumer milestone. Base: sc-mp PR #17 at
-`4f15a1fb93eaeca10c2585fc400480b18c66f432`; SDK input: published `sdk-v2.4.0`
+Status: implemented synthetic consumer milestone. Baseline: sc-mp PR #17 source
+head `7de9b52b6508c09d6639ef2df40c0ccd435443db`, merged into `main` at
+`f03ff096d11115195ceff29f5976be74b874f86c`; SDK input: published `sdk-v2.4.0`
 `core-source`, source commit `6106fa3639cbcc28f78a1ded8de2707de019f4d3`,
 archive SHA-256 `df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51`,
 inventory SHA-256 `0731afbc8632996990179950e60e03c2e9f1d263bf9f6d96f483875a7de73d78`.
