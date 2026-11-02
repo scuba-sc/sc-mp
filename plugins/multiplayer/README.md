@@ -232,7 +232,15 @@ test (below) are the only evidence; how the panel looks and feels in game is lef
   5 seconds; the extras are dropped and counted, and `multiplayer.status` adds "chat: N dropped over the rate limit, M not
   accepted" once either count is not zero. The history keeps the last 32 lines. The history and the draft in the
   message box last for one session: **Leave**, the end of the session and unload clear them. A sent line is shown only
-  after sco.net took it; when it refuses, nothing is shown and the draft stays.
+  after sco.net took it; this is queue acceptance, not a receipt from every player. A pre-queue refusal
+  (`SCO_BAD_ARG`, `SCO_NOT_FOUND`, `SCO_UNAVAILABLE`, `SCO_TOO_MANY`) keeps the draft and costs no local send slot.
+  `SCO_TOO_MANY` means the SDK refused admission; later per-recipient failures are not returned by this call.
+  Any other non-OK result is **delivery unconfirmed**: its effects are unspecified.
+  It consumes one of the 3 slots, retains the text in session history as **You (delivery unconfirmed)**,
+  and clears the draft so pressing Send again cannot replay it. The row is not a success receipt;
+  like other history it is bounded to 32 lines and erased when the session ends. There is no automatic retry. Manually retyping is a new, rate-limited
+  attempt and can duplicate a line; v1 has no message id or per-recipient delivery acknowledgements.
+  SDK-side accounting can still be affected by an allocation exception. No protocol, SDK, or relay change is required.
 - **Plain text only.** A line is copied into the history and shown. It is never written to `mod.log` or anywhere else,
   never used as a format string, and never run as a command or handed to one (CONTRIBUTING, guardrail 3: no remote
   commands between peers). A line is labelled with the speaker's name and peer id ("Alice #3"), so it cannot pass for

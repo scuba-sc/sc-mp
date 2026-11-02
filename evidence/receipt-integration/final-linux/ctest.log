@@ -1,0 +1,26 @@
+Internal ctest changing into directory: /work/build
+Test project /work/build
+      Start  1: multiplayer-module-workflow
+ 1/10 Test  #1: multiplayer-module-workflow ......   Passed   15.50 sec
+      Start  2: multiplayer-motion
+ 2/10 Test  #2: multiplayer-motion ...............   Passed   21.23 sec
+      Start  3: test_server
+ 3/10 Test  #3: test_server ......................   Passed    0.70 sec
+      Start  4: relay_install_identity
+ 4/10 Test  #4: relay_install_identity ...........   Passed    3.95 sec
+      Start  5: relay_install_full
+ 5/10 Test  #5: relay_install_full ...............   Passed   15.54 sec
+      Start  6: relay_install_source
+ 6/10 Test  #6: relay_install_source .............   Passed    8.64 sec
+      Start  7: sco_relay_program
+ 7/10 Test  #7: sco_relay_program ................   Passed    4.06 sec
+      Start  8: net_boundary_checks
+ 8/10 Test  #8: net_boundary_checks ..............   Passed    2.60 sec
+      Start  9: relay_no_game_code
+ 9/10 Test  #9: relay_no_game_code ...............   Passed    0.05 sec
+      Start 10: relay_no_game_code_checks
+10/10 Test #10: relay_no_game_code_checks ........   Passed    3.04 sec
+
+100% tests passed, 0 tests failed out of 10
+
+Total Test time (real) =  75.33 sec

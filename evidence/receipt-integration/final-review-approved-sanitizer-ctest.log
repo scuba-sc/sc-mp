@@ -1,0 +1,15 @@
+Test project <LOCAL_HOME>/.hermes/cache/scratch/sc-mp-receipt-integration-20261030/evidence/receipt-integration/asan-ubsan-final/build
+    Start 1: cli-receipts
+1/5 Test #1: cli-receipts .....................   Passed    0.21 sec
+    Start 2: authority
+2/5 Test #2: authority ........................   Passed    0.08 sec
+    Start 3: receipt-tests
+3/5 Test #3: receipt-tests ....................   Passed    0.01 sec
+    Start 4: receipt-integration
+4/5 Test #4: receipt-integration ..............   Passed    0.08 sec
+    Start 5: medium-tests
+5/5 Test #5: medium-tests .....................   Passed    0.01 sec
+
+100% tests passed out of 5
+
+Total Test time (real) =   0.40 sec

@@ -1,0 +1,7 @@
+FAIL f.authority.value==0
+PASS SDK delivered is not applied; targeted idempotent results
+PASS SDK ingress saturation recovery and evicted ID refusal
+PASS receipt DATA loss reorder duplicate retry exactly-once mutation
+PASS SDK permanent rejection receipt replay
+PASS conflicting variant cannot mask original applied receipt
+PASS all-direction medium saturation SDK recovery

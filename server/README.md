@@ -77,10 +77,11 @@ is still checked. To move to a newer release, change `SCO_SDK_VERSION`, `SCO_SDK
 The program is `build/server/sco-relay` on a single-config POSIX build, or
 `build/server/Release/sco-relay.exe` with the Visual Studio generator.
 
-The native Windows suite passes five registered tests, including the real relay
-child with two authenticated loopback clients, routing, wrong-passphrase refusal
-and clean event-driven shutdown. This is local process/transport evidence, not
-two-PC LAN or game acceptance. POSIX-only shell boundary checks remain separate.
+The native Windows suite registers five tests, including the real relay child
+with two authenticated loopback clients, routing, wrong-passphrase refusal and
+clean event-driven shutdown. Windows has not been tested on this integration
+branch. Such tests provide local process/transport evidence, not two-PC LAN or
+game acceptance. POSIX-only shell boundary checks remain separate.
 
 ## Run
 
@@ -163,7 +164,7 @@ keep stable. So the server touches the library in one place only.
   Its header, `server/net_boundary.h`, gives the rest of the server small types of its own and includes nothing from
   sco-core. The relay's own messages come from `plugins/multiplayer/relay_wire.h`, which includes nothing either.
 - `server/tools/check-no-game-code.sh` (the test `relay_no_game_code`) reads the production set only,
-  `server/*.cpp`, `server/*.h`, the shared `plugins/multiplayer/relay_wire.h` and `cmake/ScoCoreSource.cmake`. It fails when any file but the boundary file
+  `server/*.cpp`, `server/*.h`, the shared `plugins/multiplayer/relay_wire.h`, and the SDK fetch/verification CMake modules. It fails when any file but the boundary file
   includes one of the library's headers (the `sco/net/` ones or `sc_net.h`) or writes `sco::net::`, even in a
   comment; when an `#include` is not a same-directory server header, the shared wire header at its fixed relative
   path, or a standard or POSIX header (plus `windows.h` in `main.cpp` under `_WIN32` and `sal.h` in `log.h` under
@@ -208,9 +209,12 @@ keep stable. So the server touches the library in one place only.
 - `server/tools/check-net-boundary.sh <extracted kit>` needs no compiler. It checks the declarations the boundary
   uses, the constants, the lines of behaviour no compiler can see (what `Core` relays and to whom, who checks the seat
   limit, the private ranges, which interface a socket binds), and the blob id of each kit file the server compiles
-  or includes (15 files, line endings ignored: the 14 the program compiles or includes, and `tests/net_mem.h`,
-  which only `test_server` includes). The `static_assert`s in `server/net_boundary.cpp` say the same at
-  build time.
+  or includes (16 network files, line endings ignored, including both platforms' UDP implementations and
+  `tests/net_mem.h`, which only `test_server` includes), plus the kit's exact compatibility metadata.
+  The `static_assert`s in `server/net_boundary.cpp` say the same at build time. The default stable 2.4.0 profile and
+  the separately reviewed `dev-1b` profile each require a whole reviewed set, not a mixture. See the
+  [network boundary review](../docs/handoff/2026-10-31-network-boundary-review.md) for the provisional inputs
+  and their limitations.
 - `server/tests/test_net_boundary_checks.sh` (the test `net_boundary_checks`) proves that those checks fire, on altered
   copies of the kit's files, and that a changed session limit or `Core::Host` does not compile.
 - The session limit is one definition, `SCO_RELAY_EXPECTED_SESSION_LIMIT`, which is 16: it counts the server, so the
