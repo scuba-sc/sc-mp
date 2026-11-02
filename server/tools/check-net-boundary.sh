@@ -232,6 +232,11 @@ behaviour $core_cpp 'peer numbers start again only with a new session' 'nextPeer
 behaviour $core_cpp 'a player who joins again from the same address is told to have rejoined' 'if (old) RemoveLink(old->id, "rejoined");'
 behaviour $core_cpp 'a player who left on purpose is told with its reason' 'RemoveLink(l.id, "left: " + text);'
 behaviour $core_cpp 'a silent player is dropped as timed out' 'RemoveLink(id, "timed out");'
+if [ "$profile" = dev-1b ]; then
+    behaviour $core_cpp 'the historical dev-1b profile reserves for its full queued payload' 'b.reserve(28 + u->data.size());'
+else
+    behaviour $core_cpp 'stable core bounds the reliable-fragment output reservation' 'b.reserve(SC_NET_DATA_HEAD_REL + std::min(u->data.size(), size_t{kFragBytes}));'
+fi
 
 scope_cpp=src/net/scope.cpp
 wire_cpp=src/net/wire.cpp
@@ -249,22 +254,26 @@ behaviour $udp_cpp 'both Open calls end in the same bind' 'return OpenBound(port
 behaviour $udp_cpp 'a datagram longer than the buffer is reported as one byte too long' '*len = (msg.msg_flags & MSG_TRUNC) ? cap + 1 : static_cast<size_t>(r);'
 
 # ---- 3. every file the boundary reads, unchanged since it was checked ---------------------------------
-# Blob ids of the files in sco-sdk-core-source-2.4.0.zip from immutable release sdk-v2.4.0
-# (archive SHA-256 df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51; signed source commit
-# 6106fa3639cbcc28f78a1ded8de2707de019f4d3). Compared with RC2, the release adds the bounded reliable-fragment
-# reservation in core.cpp and receive-buffer sizing/query support in udp.h and udp_posix.cpp. The rest of these
-# boundary inputs retain their pinned blob ids. The last five files are not read by the checks above, but the relay
-# compiles or includes them too (they sit under the library's core and its wire), so a change in them is noticed the
-# same way. The fifth is the kit's tests/net_mem.h, the in-memory network that test_server includes (the program never does).
+# Stable blob ids below are from sco-sdk-core-source-2.4.0 at immutable release sdk-v2.4.0
+# (archive SHA-256 df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51; source commit
+# 6106fa3639cbcc28f78a1ded8de2707de019f4d3). Compared with RC2, the release bounds the reliable-fragment
+# reservation in core.cpp and adds receive-buffer sizing/query support in udp.h and udp_posix.cpp.
+# The separately reviewed dev-1b profile is older: its core.cpp still reserves for the full queued payload.
+# That compatibility-only profile pins its own exact blob and line below; it is not the production default.
+# The last five files are not read by the checks above, but the relay compiles or includes them too (they sit under
+# the library's core and its wire), so a change in them is noticed the same way. The fifth is the kit's
+# tests/net_mem.h, the in-memory network that test_server includes (the program never does).
 
 if [ "$profile" = dev-1b ]; then
     # Provisional kit produced from core 1b6782bc5c8b7d189cdff4c83e81957f09af35d7.
     metadata=093ad95a682e92a5a8cb285781f31cd5a058e1a4
+    core_blob=540ead2f58c2e49519e8c27b9918fabcecc1eba5
     udp_header=a61e895e059f864a7d84231fb00eb654d5a2e7b2
     udp_posix=86244e35725136ec0ecfdf432ed7c891f6356591
     udp_windows=9ebdbff02d1f74d638599dfd2b04daff72f780fa
 else
     metadata=cd4820b30421a4407255120b3d2aeb0db960e7d0
+    core_blob=7872b5b19dbe7c960bc4732f92f7d5a81f972e7f
     udp_header=a61e895e059f864a7d84231fb00eb654d5a2e7b2
     udp_posix=86244e35725136ec0ecfdf432ed7c891f6356591
     udp_windows=9ebdbff02d1f74d638599dfd2b04daff72f780fa
@@ -276,7 +285,7 @@ file_pin include/sco/net/scope.h 650b1df56628c1ffeb99c9a84221e28d2164cd3a
 file_pin include/sco/net/transport.h 9ad67f517234f28fb99e44c8cf367a5ccb700542
 file_pin include/sco/net/udp.h "$udp_header"
 file_pin include/sco/net/wire.h 26e1ea011d6b131238a186e4fc0b33dbb69c03a0
-file_pin src/net/core.cpp 7872b5b19dbe7c960bc4732f92f7d5a81f972e7f
+file_pin src/net/core.cpp "$core_blob"
 file_pin src/net/scope.cpp de7f0c50ca8178135363f4f049ba751a17de3382
 file_pin src/net/wire.cpp 317f2d63a8e7981f0399155918e67b0bccd9a0b6
 file_pin src/net/udp_posix.cpp "$udp_posix"

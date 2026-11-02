@@ -1,8 +1,23 @@
-# Provisional network boundary review — 2026-10-31
+# Historical provisional network boundary review — 2026-10-31
 
-This is a source and synthetic Linux review, not approval of a production SDK,
-Windows build, LAN session, or game behavior. The coordinated core #304 head
-below is still a draft; another core source requires a fresh review and pins.
+This snapshot records a source and synthetic Linux review of the pre-merge core
+#304 development head. It is not a review of the later stable release and does
+not establish Windows gameplay, LAN, or game behavior.
+
+## Current SDK status — 2026-11-02
+
+The reviewed #304 development head `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`
+was merged into sco-core main by merge commit
+`7ee83fa95680aa482d8b160987b472547a67b888`. The stable SDK is a later,
+separately published source input: release `sdk-v2.4.0`, source commit
+`6106fa3639cbcc28f78a1ded8de2707de019f4d3`, `core-source` archive SHA-256
+`df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51`, and
+inventory SHA-256
+`0731afbc8632996990179950e60e03c2e9f1d263bf9f6d96f483875a7de73d78`.
+sc-mp's stable profile pins this published pair by default. Its separate
+`dev-1b` compatibility profile retains the exact older development artifacts.
+The comparison below is only RC2 versus that pre-merge `1b678` source; its blob
+table does not establish equivalence with stable `6106fa3`.
 
 ## Compared inputs
 
@@ -24,7 +39,8 @@ below is still a draft; another core source requires a fresh review and pins.
   core-source SHA-256 is `35242e00989de3afd61f24a7a67dfd4958c3331222bea9e121f952452477d1ab`.
   These local hashes do not authenticate the source or establish publication
   of an SDK.
-- Current coordinated core #304 head: `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`.
+- Pre-merge coordinated core #304 head used by `dev-1b`:
+  `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`.
   Its only change from `571fe8e` normalizes the Windows CRLF test fixture;
   the reviewed network files are unchanged. The locally generated legacy SDK
   SHA-256 is `bb52b8bf1cab5aea09939e68a387705149411ce6c8af48e3f3f2576fc8a83c31`
