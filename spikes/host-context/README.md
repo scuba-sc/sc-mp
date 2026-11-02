@@ -45,8 +45,10 @@ the captured copy stays valid for its recorded generation. This is not a guarant
 of latest state at return. New reads follow the current generation and admission
 state; preserving an admitted old copy does not authorize a new stale read.
 
-Build with the specified kit and run the independent processes. Direct CMake
-verification requires Python 3.8 or newer:
+Build with the specified kit and run the independent processes. The direct
+CMake build verifies the extracted inventory using CMake itself and does not
+require Python. The separate offline archive qualifier below requires Python
+3.8 or newer:
 
 ```sh
 cmake -S spikes/host-context -B /tmp/host-context-build -DSDK_ROOT=/path/to/extracted/sco-sdk-core-source-2.4.0 -DCMAKE_BUILD_TYPE=Release
