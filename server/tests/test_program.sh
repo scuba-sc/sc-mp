@@ -11,6 +11,7 @@ if [ -z "$program" ] || [ ! -x "$program" ]; then
     echo "usage: sh test_program.sh <path to the sco-relay program>" >&2
     exit 2
 fi
+program=$(cd "$(dirname "$program")" && pwd)/$(basename "$program")
 
 work=$(mktemp -d)
 server_pid=""
@@ -42,6 +43,14 @@ run() {   # <log> [argument...]: runs the program to the end, keeping its exit s
     log=$1
     shift
     "$program" "$@" > "$log" 2>&1
+    status=$?
+}
+
+run_from() {   # <log> <working directory> [argument...]
+    log=$1
+    cwd=$2
+    shift 2
+    (cd "$cwd" && "$program" "$@") > "$log" 2>&1
     status=$?
 }
 
@@ -79,6 +88,7 @@ check "no argument exits 2" '[ "$status" -eq 2 ]'
 
 run "$work/help.log" --help
 check "--help exits 0 and says how to start" '[ "$status" -eq 0 ] && contains "$work/help.log" "usage: sco-relay"'
+check "--help documents --check-config" 'contains "$work/help.log" "--check-config <config-file>"'
 
 run "$work/missing.log" "$work/missing.conf"
 check "a missing config file exits 1 and says so" '[ "$status" -eq 1 ] && contains "$work/missing.log" "cannot open"'
@@ -87,9 +97,42 @@ printf 'passphrase = short\nmax_players = 3\n' > "$work/bad.conf"
 run "$work/bad.log" "$work/bad.conf"
 check "a bad config exits 1 and names the line" '[ "$status" -eq 1 ] && contains "$work/bad.log" "line 1"'
 
+printf 'passphrase = REDACT\nmax_players = 3\n' > "$work/check-bad.conf"
+run "$work/check-bad.log" --check-config "$work/check-bad.conf"
+check "--check-config rejects an invalid config with a bounded error" '[ "$status" -eq 1 ] && contains "$work/check-bad.log" "config check failed"'
+check "--check-config errors do not print the passphrase" '! contains "$work/check-bad.log" "REDACT"'
+mkdir "$work/check-no-arg-cwd"
+run_from "$work/check-missing-argument.log" "$work/check-no-arg-cwd" --check-config
+check "--check-config without a path exits 2" '[ "$status" -eq 2 ] && contains "$work/check-missing-argument.log" "usage: sco-relay"'
+run_from "$work/check-stop-event-shape.log" "$work/check-no-arg-cwd" --check-config --stop-event ignored
+check "--check-config cannot consume Windows stop-event arguments" '[ "$status" -eq 2 ] && contains "$work/check-stop-event-shape.log" "usage: sco-relay"'
+
+control_char=$(printf '\033')
+c1_char=$(printf '\302\233')
+control_path="$work/$(printf 'check\033-config.conf')"
+printf 'passphrase = PREFLIGHT-SECRET-SENTINEL%s\nmax_players = 3\nport = PREFLIGHT-SECRET-SENTINEL%s\n' \
+    "$c1_char" "$c1_char" > "$control_path"
+run "$work/check-control.log" --check-config "$control_path"
+check "--check-config rejects the malformed control-character config" '[ "$status" -eq 1 ] && contains "$work/check-control.log" "config check failed"'
+check "preflight diagnostics do not print the passphrase" '! contains "$work/check-control.log" "PREFLIGHT-SECRET-SENTINEL"'
+check "preflight diagnostics do not print path control characters" \
+    '! LC_ALL=C grep -qF -- "$control_char" "$work/check-control.log"'
+check "preflight diagnostics do not print value control characters" \
+    '! LC_ALL=C grep -qF -- "$c1_char" "$work/check-control.log"'
+
 # ---- a clean stop ---------------------------------------------------------------------------------
 
 write_config "$work/good.conf"
+mkdir "$work/preflight-cwd"
+run_from "$work/check-good.log" "$work/preflight-cwd" --check-config "$work/good.conf"
+check "valid --check-config exits 0" '[ "$status" -eq 0 ]'
+check "preflight reports a bounded validation summary" \
+    'contains "$work/check-good.log" "Configuration is valid." && contains "$work/check-good.log" "UDP port:" && contains "$work/check-good.log" "Maximum players: 3"'
+check "preflight summary does not print the passphrase" '! contains "$work/check-good.log" "a test passphrase"'
+check "preflight does not announce a running relay" \
+    '! contains "$work/check-good.log" "listening on UDP port" && ! contains "$work/check-good.log" "session is up"'
+check "preflight leaves its working directory empty" '[ -z "$(find "$work/preflight-cwd" -mindepth 1 -print -quit)" ]'
+
 if start_server "$work/good.conf" "$work/term.log"; then
     check "the server comes up on the port it was given" 'contains "$work/term.log" "listening on UDP port $port"'
     stop_server TERM
@@ -132,6 +175,14 @@ check "nearby_only = maybe exits 1 and names the line" \
 # ---- the port is already taken --------------------------------------------------------------------
 
 if start_server "$work/good.conf" "$work/first.log"; then
+    run "$work/check-busy.log" --check-config "$work/good.conf"
+    check "preflight succeeds while its UDP port is already occupied" \
+        '[ "$status" -eq 0 ] && contains "$work/check-busy.log" "Configuration is valid." && ! contains "$work/check-busy.log" "cannot listen"'
+    mkdir "$work/check-option-cwd"
+    cp "$work/good.conf" "$work/check-option-cwd/--check-config"
+    run_from "$work/check-option-file.log" "$work/check-option-cwd" --check-config
+    check "--check-config stays reserved when a same-named config file exists" \
+        '[ "$status" -eq 2 ] && contains "$work/check-option-file.log" "usage: sco-relay"'
     run "$work/second.log" "$work/good.conf"
     check "a taken port exits 1 and says what to do" \
         '[ "$status" -eq 1 ] && contains "$work/second.log" "cannot listen on UDP port" && contains "$work/second.log" "stop the other program"'
