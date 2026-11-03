@@ -77,6 +77,13 @@ is still checked. To move to a newer release, change `SCO_SDK_VERSION`, `SCO_SDK
 The program is `build/server/sco-relay` on a single-config POSIX build, or
 `build/server/Release/sco-relay.exe` with the Visual Studio generator.
 
+On Windows, build just the relay with
+`cmake --build build --config Release --target sco-relay`. For a per-user
+staging directory, update behavior, and foreground start/stop steps, see the
+[Windows staging kit](deploy/windows/README.md). It copies an already-built
+executable and preserves an existing config; it does not install a service or
+alter system policy.
+
 The current main CI runs the relay lifecycle suite on Windows and Linux, including real
 relay-process and loopback transport checks. These synthetic process/transport results do not
 establish two-PC LAN behavior, Windows firewall configuration, durable recovery or game acceptance.
@@ -84,10 +91,14 @@ POSIX-only shell boundary checks remain separate.
 
 ## Run
 
+On POSIX, copy the example config, set a private passphrase (12 to 128 bytes) and `max_players`, then run:
+
 ```
-cp server/sco-relay.example.conf my.conf     # set passphrase (12 to 128 bytes) and max_players, at least
+cp server/sco-relay.example.conf my.conf
 build/server/sco-relay my.conf
 ```
+
+On Windows, follow the [per-user staging and foreground run instructions](deploy/windows/README.md).
 
 The example file lists every setting with one comment line each. It refuses to start while the passphrase is still
 the placeholder. The server takes one seat of the session, so 15 players is the most (sco-core's limit of 16 peers
@@ -147,9 +158,11 @@ The relay tests are registered with CTest alongside the rest of sc-mp:
 | `relay_compiler_environment_checks` | that implicit compiler paths/options and changed CMake compiler/linker flags are rejected while standard MSVC `INCLUDE` and `LIB` paths stay within the selected compiler, Windows SDK, Visual Studio auxiliary and unit-test library, and installed .NET Framework SDK roots |
 | `relay_msvc_pragma_link` | on MSVC, that `_Pragma("comment(lib, ...)")` creates a library search record, and what the compiler reports for a macro-expanded `#pragma` name |
 | `relay_install_guard_checks` | mocked account-identity and config-path guard cases using temporary files; the installer is not executed and system accounts are not changed |
+| `relay_windows_user_stage` | uses synthetic files to check first staging, preservation of an existing config on update, and rollback when an executable is locked; it does not start the relay |
 
-`test_server` and `relay_no_implicit_link_directives` run on Windows and Linux. The process and binary/link-boundary
-tests run on Linux except for `sco_relay_windows_process`, which runs on Windows.
+`test_server` and `relay_no_implicit_link_directives` run on Windows and Linux. The POSIX shell and binary/link-boundary
+checks are Linux-only. `sco_relay_windows_process` runs on Windows; `relay_windows_user_stage` runs there when PowerShell
+is available.
 
 `test_server` includes `tests/net_mem.h` from the extracted kit (a seeded lossy in-memory network); the server
 itself does not.
@@ -254,5 +267,5 @@ installer. Windows relay builds and tests are already supported.
 - `run_loop.h`, `run_loop.cpp`: one pass of the loop and the stats line.
 - `log.h`, `log.cpp`: the operator log.
 - `sco-relay.example.conf`: every setting, one comment line each.
-- `deploy/`: the install kit for Linux: `install.sh`, the systemd unit `sco-relay.service`, and its README.
+- `deploy/`: the Linux installer (`install.sh`, the systemd unit, and its README) and the Windows per-user staging kit (`windows/`).
 - `tests/`, `tools/`: the tests and the two checks above.
