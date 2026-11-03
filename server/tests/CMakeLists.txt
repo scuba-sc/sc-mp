@@ -21,6 +21,8 @@
 #   relay_no_implicit_link_directives rejects MSVC source-level linker pragmas on all platforms, including Windows
 #   relay_install_guard_checks exercises installer identity and config-path guards using mocked account commands
 #                                 and temporary files; it never executes the installer or changes system accounts
+#   relay_windows_user_stage     stages a synthetic executable into temporary folders, checks explicit replacement,
+#                                 config preservation and junction refusal, and exercises rollback on a locked executable
 # The full binary/link-boundary checks are Linux-only; test_server and the source-level directive check run on both.
 
 add_executable(test_server
@@ -69,6 +71,17 @@ if(WIN32)
   sco_relay_target_setup(test_windows_process)
   add_test(NAME sco_relay_windows_process COMMAND test_windows_process $<TARGET_FILE:sco-relay>)
   set_tests_properties(sco_relay_windows_process PROPERTIES TIMEOUT 60)
+
+  find_program(SCO_RELAY_POWERSHELL_EXECUTABLE NAMES pwsh.exe powershell.exe)
+  if(SCO_RELAY_POWERSHELL_EXECUTABLE)
+    add_test(NAME relay_windows_user_stage
+      COMMAND "${SCO_RELAY_POWERSHELL_EXECUTABLE}" -NoProfile -NonInteractive -ExecutionPolicy Bypass
+              -File "${CMAKE_CURRENT_SOURCE_DIR}/test_windows_user_stage.ps1")
+    set_tests_properties(relay_windows_user_stage PROPERTIES TIMEOUT 30)
+  else()
+    message(STATUS "PowerShell was not found; relay_windows_user_stage is not registered")
+  endif()
+
   if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     add_test(NAME relay_msvc_pragma_link COMMAND "${CMAKE_COMMAND}"
       "-DSCO_RELAY_CMAKE_COMMAND=${CMAKE_COMMAND}"

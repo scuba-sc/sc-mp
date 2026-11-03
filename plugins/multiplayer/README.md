@@ -10,10 +10,11 @@ fallback. Host source retains the inactive old implementation for later cleanup.
 - `multiplayer.status`, `multiplayer.leave`, `multiplayer.goto <player>`.
   Goto always reports **G2 mutation not approved**, even if another table offers
   movement. There is no private relocation fallback.
-- Retained **Multiplayer** panel: Host, Join, Leave, player name, numeric IPv4
-  address, host/join ports, local avatar archetype, show ships, remembering, text chat and
-  authenticated peer list. Host-side `sco.widgets::ImGuiRenderer` draws it on the
-  existing game-thread frame handoff; no ImGui context/types enter the module.
+- Retained **Multiplayer** panel: Host, Join, Leave, player name, Join target
+  numeric IPv4 address, host/join ports, local avatar archetype, show ships,
+  remembering, text chat and authenticated peer list. Host-side
+  `sco.widgets::ImGuiRenderer` draws it on the existing game-thread frame
+  handoff; no ImGui context/types enter the module.
 - Host/Join are deliberately UI-only operations. Loading, changing settings,
   ticks, peer packets and automatic retries never set consent or open a socket.
   Requests borrow copied host-bound credentials and validate complete callbacks.
@@ -38,11 +39,13 @@ fallback. Host source retains the inactive old implementation for later cleanup.
 
 Owner remains **`multiplayer`**, database **`data/storage/multiplayer.db`**. Global
 settings retain `name`, `join_address`, `avatar_class`, `host_port`, `join_port`,
-`show_ships` and `remember_passphrase`. The legacy global `passphrase` is not
-loaded and is deleted on the next successful settings save. Up to eight saved
-server profiles are keyed by address text and join port. Save is explicit and
-transactional; an existing address/port replaces that profile. Select a profile
-in the panel to restore its address, port and optional passphrase; selecting it
+`show_ships` and `remember_passphrase`. `join_address` is the remote endpoint
+used by Join; it does not configure the local hosting bind. The legacy global
+`passphrase` is not loaded and is deleted on the next successful settings save.
+Up to eight saved server profiles are keyed by join-target address and port.
+Save is explicit and transactional; an existing address/port replaces that
+profile. Select a profile in the panel to restore its address, port and optional
+passphrase; selecting it
 never connects. Profiles are not automatically removed on Leave. Storage 1.1
 is optional; without it, saves fail and session settings remain in memory.
 Widgets 1.2 is optional; without it the panel is absent and the plugin still
@@ -393,14 +396,19 @@ ctest --test-dir build-multiplayer -R '^multiplayer-module-workflow$' -V
 cmake --install build-multiplayer --component multiplayer --prefix stage
 ```
 
+`plugin.ini` remains a concrete Windows-compatible manifest for tools that inspect the source
+tree before CMake configuration. The build and install use `plugin.ini.in` to generate the
+platform-specific `entry` from the actual module suffix; use the staged or installed manifest
+when consuming a non-Windows build.
+
 `-DSCO_WORKFLOW_TESTS=ON` also builds `multiplayer-motion-test` (ctest name `multiplayer-motion`, about 25 s in
 real time). Add `-DSCO_MOTION_BASELINE_DIR=<folder with the unmodified multiplayer.cpp and multiplayer_wire.h of
 sc-offline #126, commit 481b99e>` and it runs that module beside this one on the same path and compares them.
 
 The enabled `plugin.ini` and module install into `stage/data/plugins/multiplayer`
-without a `disabled` marker. Windows emits `multiplayer.dll`; macOS produces a
-native development `.so` for the targeted dynamic-loading fixture, not a player
-Windows package. Shared plugin builds include this target by default when the
+without a `disabled` marker. Windows emits `multiplayer.dll`; Linux and macOS
+emit native development `.so` modules for the targeted dynamic-loading fixture,
+not a player Windows package. Shared plugin builds include this target by default when the
 extracted SDK contains `sc_private_session.h`, and explicitly report unavailable
 otherwise; no published CI job pretends to ship it without the contract.
 
