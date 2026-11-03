@@ -10,10 +10,11 @@ fallback. Host source retains the inactive old implementation for later cleanup.
 - `multiplayer.status`, `multiplayer.leave`, `multiplayer.goto <player>`.
   Goto always reports **G2 mutation not approved**, even if another table offers
   movement. There is no private relocation fallback.
-- Retained **Multiplayer** panel: Host, Join, Leave, player name, numeric IPv4
-  address, host/join ports, local avatar archetype, show ships, remembering, text chat and
-  authenticated peer list. Host-side `sco.widgets::ImGuiRenderer` draws it on the
-  existing game-thread frame handoff; no ImGui context/types enter the module.
+- Retained **Multiplayer** panel: Host, Join, Leave, player name, Join target
+  numeric IPv4 address, host/join ports, local avatar archetype, show ships,
+  remembering, text chat and authenticated peer list. Host-side
+  `sco.widgets::ImGuiRenderer` draws it on the existing game-thread frame
+  handoff; no ImGui context/types enter the module.
 - Host/Join are deliberately UI-only operations. Loading, changing settings,
   ticks, peer packets and automatic retries never set consent or open a socket.
   Requests borrow copied host-bound credentials and validate complete callbacks.
@@ -38,11 +39,13 @@ fallback. Host source retains the inactive old implementation for later cleanup.
 
 Owner remains **`multiplayer`**, database **`data/storage/multiplayer.db`**. Global
 settings retain `name`, `join_address`, `avatar_class`, `host_port`, `join_port`,
-`show_ships` and `remember_passphrase`. The legacy global `passphrase` is not
-loaded and is deleted on the next successful settings save. Up to eight saved
-server profiles are keyed by address text and join port. Save is explicit and
-transactional; an existing address/port replaces that profile. Select a profile
-in the panel to restore its address, port and optional passphrase; selecting it
+`show_ships` and `remember_passphrase`. `join_address` is the remote endpoint
+used by Join; it does not configure the local hosting bind. The legacy global
+`passphrase` is not loaded and is deleted on the next successful settings save.
+Up to eight saved server profiles are keyed by join-target address and port.
+Save is explicit and transactional; an existing address/port replaces that
+profile. Select a profile in the panel to restore its address, port and optional
+passphrase; selecting it
 never connects. Profiles are not automatically removed on Leave. Storage 1.1
 is optional; without it, saves fail and session settings remain in memory.
 Widgets 1.2 is optional; without it the panel is absent and the plugin still
