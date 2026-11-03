@@ -21,8 +21,8 @@
 #   relay_no_implicit_link_directives rejects MSVC source-level linker pragmas on all platforms, including Windows
 #   relay_install_guard_checks exercises installer identity and config-path guards using mocked account commands
 #                                 and temporary files; it never executes the installer or changes system accounts
-#   relay_windows_user_stage     stages a synthetic executable into temporary folders, checks config preservation,
-#                                 and exercises rollback when an existing executable cannot be replaced
+#   relay_windows_user_stage     stages a synthetic executable into temporary folders, checks explicit replacement,
+#                                 config preservation and junction refusal, and exercises rollback on a locked executable
 # The full binary/link-boundary checks are Linux-only; test_server and the source-level directive check run on both.
 
 add_executable(test_server

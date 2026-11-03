@@ -7,7 +7,9 @@ param(
 
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
-    [string]$InstallDirectory
+    [string]$InstallDirectory,
+
+    [switch]$ReplaceExisting
 )
 
 Set-StrictMode -Version 2.0
@@ -26,6 +28,32 @@ function Get-OptionalRegularFile([string]$Path, [string]$Description) {
         return $null
     }
     return (Assert-RegularFile $Path $Description)
+}
+
+function Assert-NoReparsePathComponents([string]$Path, [string]$Description) {
+    $currentPath = [IO.Path]::GetFullPath($Path)
+    $pathRoot = [IO.Path]::GetPathRoot($currentPath)
+    $pathSeparators = [char[]]@([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $pathRootKey = $pathRoot.TrimEnd($pathSeparators)
+    while (-not [string]::IsNullOrEmpty($currentPath)) {
+        try {
+            $component = Get-Item -LiteralPath $currentPath -ErrorAction Stop
+        }
+        catch {
+            throw "$Description path component could not be inspected: '$currentPath'."
+        }
+        if (($component.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "$Description path contains a reparse point: '$currentPath'."
+        }
+        if ($currentPath.TrimEnd($pathSeparators).Equals($pathRootKey, [StringComparison]::OrdinalIgnoreCase)) {
+            break
+        }
+        $parentPath = [IO.Path]::GetDirectoryName($currentPath)
+        if ([string]::IsNullOrEmpty($parentPath) -or $parentPath -eq $currentPath) {
+            break
+        }
+        $currentPath = $parentPath
+    }
 }
 
 function Remove-TemporaryFile([string]$Path) {
@@ -50,6 +78,7 @@ if (-not $destination.PSIsContainer -or (($destination.Attributes -band [IO.File
     throw 'The selected install directory must be an existing directory, not a reparse point.'
 }
 $destinationPath = [IO.Path]::GetFullPath($destination.FullName)
+Assert-NoReparsePathComponents $destinationPath 'The selected install directory'
 $targetExecutable = Join-Path $destinationPath 'sco-relay.exe'
 $targetConfig = Join-Path $destinationPath 'sco-relay.conf'
 $exampleConfig = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\sco-relay.example.conf'))
@@ -59,6 +88,9 @@ $oldExecutable = Get-OptionalRegularFile $targetExecutable 'The staged executabl
 $hadExecutable = $null -ne $oldExecutable
 $oldConfig = Get-OptionalRegularFile $targetConfig 'The staged config'
 $hadConfig = $null -ne $oldConfig
+if ($hadExecutable -and -not $ReplaceExisting) {
+    throw "The selected directory already contains sco-relay.exe. No files were changed; pass -ReplaceExisting only after confirming this is the relay executable to replace."
+}
 
 $token = [Guid]::NewGuid().ToString('N')
 $stagedExecutable = Join-Path $destinationPath ".sco-relay.exe.stage-$token"

@@ -14,7 +14,10 @@ function Assert-Equal([string]$Expected, [string]$Actual, [string]$Message) {
     }
 }
 
-function Invoke-Stage([string]$Script, [string]$SourceExecutable, [string]$Destination) {
+function Invoke-Stage([string]$Script, [string]$SourceExecutable, [string]$Destination, [switch]$ReplaceExisting) {
+    if ($ReplaceExisting) {
+        return (& $Script -RelayExecutable $SourceExecutable -InstallDirectory $Destination -ReplaceExisting *>&1 | Out-String)
+    }
     return (& $Script -RelayExecutable $SourceExecutable -InstallDirectory $Destination *>&1 | Out-String)
 }
 
@@ -49,7 +52,7 @@ try {
     $operatorConfig = "# synthetic user-owned config`r`npassphrase = test-only-placeholder`r`nmax_players = 3`r`n"
     [IO.File]::WriteAllText($stagedConfig, $operatorConfig)
     [IO.File]::WriteAllText($sourceExecutable, 'synthetic relay build v2')
-    $updateOutput = Invoke-Stage $stageScript $sourceExecutable $stageDirectory
+    $updateOutput = Invoke-Stage $stageScript $sourceExecutable $stageDirectory -ReplaceExisting
     $actualExecutable = [IO.File]::ReadAllText($stagedExecutable)
     $actualConfig = [IO.File]::ReadAllText($stagedConfig)
     Assert-Equal 'synthetic relay build v2' $actualExecutable 'Update did not replace the staged executable.'
@@ -61,12 +64,24 @@ try {
     $rollbackExecutable = Join-Path $rollbackDirectory 'sco-relay.exe'
     $rollbackConfig = Join-Path $rollbackDirectory 'sco-relay.conf'
     [IO.File]::WriteAllText($rollbackExecutable, 'synthetic previous executable')
-    $lockedExecutable = [IO.File]::Open(
-        $rollbackExecutable, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    $overwriteRefused = $false
+    try {
+        $null = Invoke-Stage -Script $stageScript -SourceExecutable $sourceExecutable -Destination $rollbackDirectory
+    }
+    catch {
+        $overwriteRefused = $true
+    }
+    Assert-True $overwriteRefused 'Staging silently replaced an existing executable without -ReplaceExisting.'
+    Assert-Equal 'synthetic previous executable' ([IO.File]::ReadAllText($rollbackExecutable)) 'Refused staging changed the existing executable.'
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $rollbackDirectory 'sco-relay.conf'))) 'Refused staging created a config.'
+    $remainingFiles = (Get-ChildItem -LiteralPath $rollbackDirectory -Force | Measure-Object).Count
+    Assert-True ($remainingFiles -eq 1) 'Refused staging left temporary files behind.'
+
+    $lockedExecutable = [IO.File]::Open($rollbackExecutable, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
     $stageFailed = $false
     try {
         try {
-            $null = Invoke-Stage $stageScript $sourceExecutable $rollbackDirectory
+            $null = Invoke-Stage $stageScript $sourceExecutable $rollbackDirectory -ReplaceExisting
         }
         catch {
             $stageFailed = $true
@@ -87,12 +102,11 @@ try {
     $operatorConfig = "# existing operator config`r`n# preserve this content`r`n"
     [IO.File]::WriteAllText($preservedExecutable, 'synthetic executable before failed update')
     [IO.File]::WriteAllText($preservedConfig, $operatorConfig)
-    $lockedExecutable = [IO.File]::Open(
-        $preservedExecutable, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    $lockedExecutable = [IO.File]::Open($preservedExecutable, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
     $updateFailed = $false
     try {
         try {
-            $null = Invoke-Stage $stageScript $sourceExecutable $preserveDirectory
+            $null = Invoke-Stage $stageScript $sourceExecutable $preserveDirectory -ReplaceExisting
         }
         catch {
             $updateFailed = $true
@@ -109,7 +123,25 @@ try {
     $remainingFiles = (Get-ChildItem -LiteralPath $preserveDirectory -Force | Measure-Object).Count
     Assert-True ($remainingFiles -eq 2) 'Failed update left temporary files behind.'
 
-    Write-Host 'WINDOWS_USER_STAGE_PASS first stage, config-preserving update, and failure rollback'
+    $junctionTarget = Join-Path $testRoot 'junction-target'
+    $junctionPath = Join-Path $testRoot 'junction'
+    $junctionDestination = Join-Path $junctionPath 'selected'
+    New-Item -ItemType Directory -Path $junctionTarget | Out-Null
+    New-Item -ItemType Junction -Path $junctionPath -Target $junctionTarget | Out-Null
+    New-Item -ItemType Directory -Path $junctionDestination | Out-Null
+    $reparseRefused = $false
+    try {
+        $null = Invoke-Stage $stageScript $sourceExecutable $junctionDestination
+    }
+    catch {
+        $reparseRefused = $true
+    }
+    Assert-True $reparseRefused 'Staging accepted a destination reached through a junction.'
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $junctionDestination 'sco-relay.exe'))) 'Rejected junction staging wrote an executable.'
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $junctionDestination 'sco-relay.conf'))) 'Rejected junction staging wrote a config.'
+    Remove-Item -LiteralPath $junctionPath -Force
+
+    Write-Host 'WINDOWS_USER_STAGE_PASS explicit replacement, config preservation, rollback, and junction refusal'
     exit 0
 }
 catch {

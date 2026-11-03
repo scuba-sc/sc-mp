@@ -15,6 +15,8 @@ relay. The kit does not generate or display a passphrase or read the contents
 of an existing user config. Choose a directory your account owns, such as a
 folder under your user profile; the script does not inspect or change that
 directory's ACLs.
+The selected destination and its existing path components must not be reparse
+points such as symlinks or junctions.
 
 ## Build and stage
 
@@ -43,21 +45,38 @@ if (-not (Test-Path -LiteralPath $relayDirectory)) {
 
 Open `$relayDirectory\sco-relay.conf` in a local editor and replace the placeholder passphrase. Review the port, player limit, and `allowed_addresses` against the relay's LAN/VPN rules. This kit leaves those settings as you wrote them; it does not widen them or configure a firewall.
 
+The copied example leaves `allowed_addresses` commented, so the relay's
+built-in loopback/private-range filter remains in effect. The staging script
+never starts the relay. If you manually add public ranges to the config, the
+relay can accept players from those ranges; the kit neither writes those
+ranges nor changes your firewall.
+
 Change `$relayDirectory` in the example if you selected a different folder.
 
 ## Updates and rollback
 
-Stop the foreground relay before updating. Run the same staging command with
-the new built executable. The script leaves an existing `sco-relay.conf`
-byte-for-byte untouched and replaces only `sco-relay.exe`. It stages temporary
-files beside the destination so replacement stays on the same volume. A
-locked destination executable or a filesystem that cannot replace it causes
-the update to fail; it does not fall back to truncating the existing
-executable. If first-time staging fails after creating the example config, the
-script removes that newly created config and its temporary files. If a
-replacement fails after the old executable was backed up, it attempts an
-atomic restore and reports the backup path if restore fails. A warning may
-report a previous-executable backup left by a cleanup failure.
+Stop the foreground relay before updating. Pass `-ReplaceExisting` explicitly
+to replace an existing `sco-relay.exe`; without that switch, the script refuses
+before changing files. Confirm that the existing executable is the relay you
+intend to update. The script leaves an existing `sco-relay.conf` byte-for-byte
+untouched and replaces only `sco-relay.exe`. It stages temporary files beside
+the destination so replacement stays on the same volume. A locked destination
+executable or a filesystem that cannot replace it causes the update to fail;
+it does not fall back to truncating the existing executable. If first-time
+staging fails after creating the example config, the script removes that newly
+created config and its temporary files. If a replacement fails after the old
+executable was backed up, it attempts an atomic restore and reports the backup
+path if restore fails. A warning may report a previous-executable backup left
+by a cleanup failure.
+
+For an update, append `-ReplaceExisting` to the staging command:
+
+```powershell
+.\server\deploy\windows\stage_user_relay.ps1 `
+    -RelayExecutable '.\build\server\Release\sco-relay.exe' `
+    -InstallDirectory $relayDirectory `
+    -ReplaceExisting
+```
 
 If replacement fails because the relay is still running, stop it with Ctrl+C
 in its foreground console and retry. Existing config files and pre-existing

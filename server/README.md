@@ -158,7 +158,7 @@ The relay tests are registered with CTest alongside the rest of sc-mp:
 | `relay_compiler_environment_checks` | that implicit compiler paths/options and changed CMake compiler/linker flags are rejected while standard MSVC `INCLUDE` and `LIB` paths stay within the selected compiler, Windows SDK, Visual Studio auxiliary and unit-test library, and installed .NET Framework SDK roots |
 | `relay_msvc_pragma_link` | on MSVC, that `_Pragma("comment(lib, ...)")` creates a library search record, and what the compiler reports for a macro-expanded `#pragma` name |
 | `relay_install_guard_checks` | mocked account-identity and config-path guard cases using temporary files; the installer is not executed and system accounts are not changed |
-| `relay_windows_user_stage` | uses synthetic files to check first staging, preservation of an existing config on update, and rollback when an executable is locked; it does not start the relay |
+| `relay_windows_user_stage` | uses synthetic files to check explicit replacement, config preservation, junction refusal, and rollback when an executable is locked; it does not start the relay |
 
 `test_server` and `relay_no_implicit_link_directives` run on Windows and Linux. The POSIX shell and binary/link-boundary
 checks are Linux-only. `sco_relay_windows_process` runs on Windows; `relay_windows_user_stage` runs there when PowerShell
