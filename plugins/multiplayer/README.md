@@ -393,14 +393,19 @@ ctest --test-dir build-multiplayer -R '^multiplayer-module-workflow$' -V
 cmake --install build-multiplayer --component multiplayer --prefix stage
 ```
 
+`plugin.ini` remains a concrete Windows-compatible manifest for tools that inspect the source
+tree before CMake configuration. The build and install use `plugin.ini.in` to generate the
+platform-specific `entry` from the actual module suffix; use the staged or installed manifest
+when consuming a non-Windows build.
+
 `-DSCO_WORKFLOW_TESTS=ON` also builds `multiplayer-motion-test` (ctest name `multiplayer-motion`, about 25 s in
 real time). Add `-DSCO_MOTION_BASELINE_DIR=<folder with the unmodified multiplayer.cpp and multiplayer_wire.h of
 sc-offline #126, commit 481b99e>` and it runs that module beside this one on the same path and compares them.
 
 The enabled `plugin.ini` and module install into `stage/data/plugins/multiplayer`
-without a `disabled` marker. Windows emits `multiplayer.dll`; macOS produces a
-native development `.so` for the targeted dynamic-loading fixture, not a player
-Windows package. Shared plugin builds include this target by default when the
+without a `disabled` marker. Windows emits `multiplayer.dll`; Linux and macOS
+emit native development `.so` modules for the targeted dynamic-loading fixture,
+not a player Windows package. Shared plugin builds include this target by default when the
 extracted SDK contains `sc_private_session.h`, and explicitly report unavailable
 otherwise; no published CI job pretends to ship it without the contract.
 

@@ -2,6 +2,7 @@
 * text=auto
 *.sh        text eol=lf
 *.ini       text eol=crlf
+*.ini.in    text eol=crlf
 *.bat       text eol=crlf
 *.dll       binary
 *.exe       binary
