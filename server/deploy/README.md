@@ -5,6 +5,9 @@ relay from this repository, installs it on a plain Linux machine and runs it. Th
 every address outside them (see [Who can join](#who-can-join)). This project runs no relays and keeps no list of them, so
 the kit helps you run your own for your own players.
 
+Windows has a separate non-elevated, per-user file staging kit; see [windows/README.md](windows/README.md). It does not
+create the Linux installer’s service account or systemd service.
+
 **Not run on a real VM. Not run in game.** What was run is listed under [Evidence](#evidence).
 
 ## The command
