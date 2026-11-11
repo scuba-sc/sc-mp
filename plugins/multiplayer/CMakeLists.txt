@@ -32,10 +32,12 @@ else()
     target_link_options(sc-offline-multiplayer PRIVATE -Wl,--no-undefined)
   endif()
 endif()
-configure_file(plugin.ini "${CMAKE_BINARY_DIR}/plugins/multiplayer/plugin.ini" COPYONLY)
+set(SC_MP_PLUGIN_ENTRY "multiplayer${CMAKE_SHARED_MODULE_SUFFIX}")
+configure_file(plugin.ini.in "${CMAKE_BINARY_DIR}/plugins/multiplayer/plugin.ini" @ONLY)
 install(TARGETS sc-offline-multiplayer LIBRARY DESTINATION data/plugins/multiplayer COMPONENT multiplayer
   RUNTIME DESTINATION data/plugins/multiplayer COMPONENT multiplayer)
-install(FILES plugin.ini DESTINATION data/plugins/multiplayer COMPONENT multiplayer)
+install(FILES "${CMAKE_BINARY_DIR}/plugins/multiplayer/plugin.ini"
+  DESTINATION data/plugins/multiplayer COMPONENT multiplayer)
 
 option(SCO_WORKFLOW_TESTS "Build narrow synthetic multiplayer module workflow" OFF)
 if(SCO_WORKFLOW_TESTS)
