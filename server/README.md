@@ -74,6 +74,14 @@ is still checked. To move to a newer release, change `SCO_SDK_VERSION`, `SCO_SDK
 `SCO_SDK_SHA256` and `SCO_CORE_SOURCE_SHA256` together (from the release `SHA256SUMS`), then read
 [The sco-core boundary](#the-sco-core-boundary).
 
+The provisional `coordinated-d33932b` profile selects Core
+`d33932bc14b85af0caccc4636b42028f44f97710` and the exact unpublished SDK
+and core-source archives listed in the [root README](../README.md#coordinated-development-sdk-inputs).
+It requires an explicit local archive directory and retains the reviewed network
+file pins. Existing stable and development profiles remain unchanged. This
+development pair is not a release or evidence of gameplay, LAN, or durable
+recovery; not run in game. Official game services are never contacted.
+
 The program is `build/server/sco-relay` on a single-config POSIX build, or
 `build/server/Release/sco-relay.exe` with the Visual Studio generator.
 

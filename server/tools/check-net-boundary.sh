@@ -20,7 +20,7 @@
 # change server/net_boundary.cpp if the change needs it, then update the lines and blob ids below in the same
 # commit that moves the pin.
 #
-# Usage: sh server/tools/check-net-boundary.sh <kit-dir> [stable-2.4.0|dev-1b]
+# Usage: sh server/tools/check-net-boundary.sh <kit-dir> [stable-2.4.0|dev-1b|coordinated-d33932b]
 #        stable-2.4.0 is the default; dev-1b is a separately reviewed coordinated development input.
 #        sh server/tools/check-net-boundary.sh --list-files  prints the files the checks read, one per line
 # CMake runs it through server/tests/test_net_boundary_checks.sh, which also runs it on altered copies to prove
@@ -36,7 +36,7 @@ if [ "${1:-}" = "--list-files" ]; then
 elif [ -n "${1:-}" ]; then
     core=$1
 fi
-case "$profile" in stable-2.4.0|dev-1b) ;; *) echo "check-net-boundary: unknown profile: $profile" >&2; exit 2 ;; esac
+case "$profile" in stable-2.4.0|dev-1b|coordinated-d33932b) ;; *) echo "check-net-boundary: unknown profile: $profile" >&2; exit 2 ;; esac
 if [ "$mode" = check ] && [ -z "$core" ]; then
     echo "usage: sh server/tools/check-net-boundary.sh <extracted sco-core source kit> | --list-files" >&2
     exit 2
@@ -102,7 +102,7 @@ metadata_pin() { # <expected git blob id>
         return 0
     fi
     now=$(git hash-object --stdin < "$core/COMPATIBILITY.json")
-    [ "$now" = "$1" ] || fail "sco-core COMPATIBILITY.json does not match the $profile reviewed source metadata"
+    [ "$now" = "$1" ] || fail "sco-core COMPATIBILITY.json does not match the $profile selected source metadata"
 }
 
 if [ "$mode" = check ] && [ ! -f "$core/include/sco/net/core.h" ]; then
@@ -273,6 +273,10 @@ if [ "$profile" = dev-1b ]; then
     udp_windows=9ebdbff02d1f74d638599dfd2b04daff72f780fa
 else
     metadata=cd4820b30421a4407255120b3d2aeb0db960e7d0
+    if [ "$profile" = coordinated-d33932b ]; then
+        # The coordinated candidate retains the previously reviewed network files.
+        metadata=084c631e0e33e167fdba77a318a039267bfc11af
+    fi
     core_blob=7872b5b19dbe7c960bc4732f92f7d5a81f972e7f
     udp_header=a61e895e059f864a7d84231fb00eb654d5a2e7b2
     udp_posix=86244e35725136ec0ecfdf432ed7c891f6356591

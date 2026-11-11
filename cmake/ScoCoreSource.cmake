@@ -90,8 +90,9 @@ message(STATUS "sco-core source kit: ${_sco_cs_zip_name} SHA-256 verified")
 
 # This check applies even when tests are disabled and on Windows. The default is the immutable stable release;
 # the separately reviewed development pair can be selected explicitly for coordinated compatibility work.
-set(SC_MP_NET_BOUNDARY_PROFILE "stable-2.4.0" CACHE STRING "Reviewed relay network boundary profile (stable-2.4.0 or dev-1b)")
-set_property(CACHE SC_MP_NET_BOUNDARY_PROFILE PROPERTY STRINGS stable-2.4.0 dev-1b)
+set(SC_MP_NET_BOUNDARY_PROFILE "stable-2.4.0" CACHE STRING "Relay network boundary profile (stable-2.4.0, dev-1b or coordinated-d33932b)")
+set_property(CACHE SC_MP_NET_BOUNDARY_PROFILE PROPERTY STRINGS stable-2.4.0 dev-1b coordinated-d33932b)
+set(_boundary_sdk_version "2.4.0")
 if(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "stable-2.4.0")
   set(_boundary_sdk_sha "0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc")
   set(_boundary_source_sha "df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51")
@@ -100,12 +101,19 @@ elseif(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "dev-1b")
   set(_boundary_sdk_sha "bb52b8bf1cab5aea09939e68a387705149411ce6c8af48e3f3f2576fc8a83c31")
   set(_boundary_source_sha "5239c2820049eaae43185272771085eb443871430b2ef0cff17b07fc72fba166")
   set(_boundary_sums "a59ef54b6ac01a574f612f224a036ece8991596f8255f54446a11d15ac515fbc")
+
+elseif(SC_MP_NET_BOUNDARY_PROFILE STREQUAL "coordinated-d33932b")
+  # Unpublished coordinated Core source d33932bc14b85af0caccc4636b42028f44f97710.
+  set(_boundary_sdk_version "2.4.1-dev.1")
+  set(_boundary_sdk_sha "c24f81580b6b1f95bbd1a55f4346a75c7b3512b7d09755981dd0c795734aed1f")
+  set(_boundary_source_sha "01d1ec68a60042f126aa3691fd64045534875cf5c552709d7b8e1f1b86fda745")
+  set(_boundary_sums "8540f20aeb6c6e0284b43e4e8572d71cb38a888ccf950278627afba00ce20902")
 else()
   message(FATAL_ERROR "Unknown SC_MP_NET_BOUNDARY_PROFILE: ${SC_MP_NET_BOUNDARY_PROFILE}")
 endif()
-if(NOT SCO_SDK_VERSION STREQUAL "2.4.0" OR NOT SCO_SDK_SHA256 STREQUAL _boundary_sdk_sha OR
+if(NOT SCO_SDK_VERSION STREQUAL _boundary_sdk_version OR NOT SCO_SDK_SHA256 STREQUAL _boundary_sdk_sha OR
    NOT SCO_CORE_SOURCE_SHA256 STREQUAL _boundary_source_sha)
-  message(FATAL_ERROR "SDK archive pair does not match the reviewed ${SC_MP_NET_BOUNDARY_PROFILE} network boundary profile")
+  message(FATAL_ERROR "SDK archive pair does not match the selected ${SC_MP_NET_BOUNDARY_PROFILE} network boundary profile")
 endif()
 
 # The extraction folder is keyed by the verified hash, so a different archive never reuses it.

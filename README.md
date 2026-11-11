@@ -79,6 +79,17 @@ kit changes one, review the difference before updating those checks, and do not 
 [network boundary review](docs/handoff/2026-10-31-network-boundary-review.md); a new source and its artifacts require
 a new review and pins. Published SDK pins remain the default until a separately reviewed change updates them.
 Development input results are not release, Windows, LAN or game evidence.
+
+The `coordinated-d33932b` profile selects an unpublished 2.4.1-dev.1 pair from
+Core `d33932bc14b85af0caccc4636b42028f44f97710`. Its legacy SDK archive
+SHA-256 is `c24f81580b6b1f95bbd1a55f4346a75c7b3512b7d09755981dd0c795734aed1f`
+and its core-source archive SHA-256 is
+`01d1ec68a60042f126aa3691fd64045534875cf5c552709d7b8e1f1b86fda745`. Set
+`SCO_SDK_ARCHIVE_DIR` explicitly and supply these values with the profile; the
+build refuses mixed or missing archives. This local development pair is not a
+release or approval. Session authority remains process-rooted and volatile;
+there is no durable recovery or native game authority. Not run in game.
+
 The hosted Linux and Windows jobs build and test the published stable SDK 2.4.0 pair. Separate coordinated-development jobs use the exact `dev-1b` source and archive hashes above. Check each job's result for its actual platform evidence.
 
 ## Relay support

@@ -9,12 +9,12 @@ import tempfile
 
 
 def main():
-    root, cmake, archives, profile, sdk_hash, source_hash = sys.argv[1:]
+    root, cmake, archives, profile, sdk_hash, source_hash, version = sys.argv[1:]
     with tempfile.TemporaryDirectory(prefix="sc-mp-boundary-config-") as temp:
         build = Path(temp) / "build"
         args = [cmake, "-S", root, "-B", str(build), "-G", "Unix Makefiles",
                 "-DSC_MP_BUILD_TESTS=OFF", "-DSC_MP_BUILD_RELAY=ON",
-                f"-DSCO_SDK_ARCHIVE_DIR={archives}", f"-DSCO_SDK_SHA256={sdk_hash}",
+                f"-DSCO_SDK_ARCHIVE_DIR={archives}", f"-DSCO_SDK_SHA256={sdk_hash}", f"-DSCO_SDK_VERSION={version}",
                 f"-DSCO_CORE_SOURCE_SHA256={source_hash}", f"-DSC_MP_NET_BOUNDARY_PROFILE={profile}"]
 
         def configure(extra=()):
@@ -32,9 +32,23 @@ def main():
         print("ok   matching kit accepted with tests disabled")
         other = "dev-1b" if profile == "stable-2.4.0" else "stable-2.4.0"
         refused(configure((f"-DSC_MP_NET_BOUNDARY_PROFILE={other}",)),
-                "does not match the reviewed", "mismatched profile and archive pair")
+                "does not match the selected", "mismatched profile and archive pair")
+        refused(configure(("-DSCO_SDK_VERSION=9.9.9",)),
+                "does not match the selected", "mismatched SDK version")
+        refused(configure((f"-DSCO_SDK_SHA256={'0' * 64}",)),
+                "does not match the selected", "mismatched SDK digest")
+        refused(configure((f"-DSCO_CORE_SOURCE_SHA256={'0' * 64}",)),
+                "refusing to build it", "mismatched source digest")
+        if profile == "coordinated-d33932b":
+            refused(configure(("-DSCO_SDK_SHA256=0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc",)),
+                    "does not match the selected", "stable SDK with current profile")
+            refused(configure(("-DSCO_CORE_SOURCE_SHA256=df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51",)),
+                    "refusing to build it", "stable core-source with current profile")
+        if profile == "coordinated-d33932b":
+            refused(configure(("-DSCO_SDK_ARCHIVE_DIR=",)),
+                    "requires an explicit local archive directory", "missing private archive directory")
 
-        kit = build / "_sdk" / f"core-source-{source_hash}" / "sco-sdk-core-source-2.4.0"
+        kit = build / "_sdk" / f"core-source-{source_hash}" / f"sco-sdk-core-source-{version}"
         # A changed SDK CMakeLists must be rejected before it can execute.
         cmakelists = kit / "CMakeLists.txt"
         original = cmakelists.read_bytes()
@@ -64,7 +78,7 @@ def main():
         finally:
             extra.unlink()
 
-        sdk = build / "_sdk" / f"src-{sdk_hash}" / "sco-sdk-2.4.0"
+        sdk = build / "_sdk" / f"src-{sdk_hash}" / f"sco-sdk-{version}"
         for relative, expected in (("include/sco_api.h", "SDK extraction file changed"),
                                    ("SHA256SUMS", "SDK inventory changed")):
             target = sdk / relative
