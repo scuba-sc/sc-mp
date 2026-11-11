@@ -117,7 +117,7 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME relay_boundary_config
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_boundary_config.py"
             "${SCO_RELAY_ROOT}" "${CMAKE_COMMAND}" "${CMAKE_BINARY_DIR}/_sdk"
-            "${SC_MP_NET_BOUNDARY_PROFILE}" "${SCO_SDK_SHA256}" "${SCO_CORE_SOURCE_SHA256}")
+            "${SC_MP_NET_BOUNDARY_PROFILE}" "${SCO_SDK_SHA256}" "${SCO_CORE_SOURCE_SHA256}" "${SCO_SDK_VERSION}")
   set_tests_properties(relay_boundary_config PROPERTIES TIMEOUT 600)
 endif()
 add_test(NAME sco_relay_program
