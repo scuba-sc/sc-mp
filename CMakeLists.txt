@@ -113,6 +113,37 @@ endif()
 
 add_subdirectory(plugins/multiplayer)
 
+if(SC_MP_BUILD_TESTS)
+  set(_mp_manifest_test "${CMAKE_CURRENT_LIST_DIR}/tools/check_plugin_manifest.cmake")
+  add_test(NAME multiplayer-plugin-manifest-staged
+    COMMAND "${CMAKE_COMMAND}"
+      "-DSC_MP_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins/multiplayer"
+      "-DSC_MP_EXPECTED_MODULE=$<TARGET_FILE_NAME:sc-offline-multiplayer>"
+      -P "${_mp_manifest_test}")
+  add_test(NAME multiplayer-plugin-manifest-source
+    COMMAND "${CMAKE_COMMAND}"
+      "-DSC_MP_SOURCE_PLUGIN_DIR=${CMAKE_CURRENT_SOURCE_DIR}/plugins/multiplayer"
+      -DSC_MP_EXPECTED_SOURCE_MODULE=multiplayer.dll
+      -DSC_MP_TEST_SOURCE=ON
+      -P "${_mp_manifest_test}")
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME multiplayer-plugin-manifest-installed
+      COMMAND "${CMAKE_COMMAND}"
+        "-DSC_MP_BUILD_DIR=${CMAKE_BINARY_DIR}"
+        "-DSC_MP_PYTHON=${Python3_EXECUTABLE}"
+        "-DSC_MP_EXPECTED_MODULE=$<TARGET_FILE_NAME:sc-offline-multiplayer>"
+        "-DSC_MP_CONFIG=$<CONFIG>"
+        -DSC_MP_TEST_INSTALL=ON
+        -P "${_mp_manifest_test}")
+    add_test(NAME multiplayer-plugin-manifest-install-safety
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/tools/test_manifest_install_safety.py"
+        "${CMAKE_COMMAND}" "${_mp_manifest_test}" "${CMAKE_BINARY_DIR}"
+        "$<TARGET_FILE_NAME:sc-offline-multiplayer>" "$<CONFIG>")
+  else()
+    message(STATUS "sc-mp: Python not found; installed manifest checks unavailable")
+  endif()
+endif()
+
 if(SC_MP_BUILD_RELAY)
   include("${CMAKE_CURRENT_LIST_DIR}/cmake/ScoCoreSource.cmake")
   add_subdirectory(server)
@@ -163,8 +194,7 @@ if(SC_MP_BUILD_TESTS)
     target_link_libraries(sco-plugin-check PRIVATE ${CMAKE_DL_LIBS})
   endif()
 
-  # Check the staged plugin folder (plugin.ini + built module), as the host reads it. The host is Windows,
-  # so plugin.ini names multiplayer.dll: the gate runs on Windows only.
+  # Check the staged plugin folder with the Windows SDK loader checker.
   if(WIN32)
     add_test(NAME multiplayer-plugin-check
       COMMAND sco-plugin-check "${CMAKE_BINARY_DIR}/plugins/multiplayer")
