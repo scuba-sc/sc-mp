@@ -89,7 +89,11 @@ sco_result SetPanel(sco_plugin* s,const char* id,const char*,const sco_widget_no
         const sco_widget_node* node=&ext->base.base;
         if(node->id==1 && node->kind==SCO_WIDGET_BUTTON) hostSeen=true;
         if(node->id==2 && node->kind==SCO_WIDGET_BUTTON) joinSeen=true;
-        if(node->id==5) addressInPanel=node->text;
+        if(node->id==5) {
+            addressInPanel=node->text;
+            CHECK(node->label && std::strcmp(node->label,"Join target numeric IPv4 address")==0);
+            CHECK(std::strcmp(ext->tag,"address")==0);
+        }
         if(node->id==6) { maskSeen=(node->flags&SCO_WIDGET_PASSWORD)!=0;passInPanel=node->text; }
         if(node->id==11) rememberSeen=node->value!=0;
         if(node->id==12) panelStatus=node->label;

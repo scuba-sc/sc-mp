@@ -750,7 +750,7 @@ void UpdatePanel() {
     for(unsigned i=0;i<3;++i) nodes[i].kind=SCO_WIDGET_BUTTON;
     nodes[0].label="Host private session";nodes[1].label="Join private session";nodes[2].label="Leave";
     for(unsigned i:{3u,4u,5u,8u}) nodes[i].kind=SCO_WIDGET_TEXT_INPUT;
-    nodes[3].label="Player name";nodes[3].text=cfg.name;nodes[4].label="Host numeric IPv4 address";nodes[4].text=cfg.address;
+    nodes[3].label="Player name";nodes[3].text=cfg.name;nodes[4].label="Join target numeric IPv4 address";nodes[4].text=cfg.address;
     nodes[5].label="Passphrase (12+ bytes)";nodes[5].text=std::strlen(cfg.pass)<=SCO_WIDGETS_MAX_TEXT?cfg.pass:"";nodes[5].flags=SCO_WIDGET_PASSWORD;
     for(unsigned i:{6u,7u}) { nodes[i].kind=SCO_WIDGET_SLIDER;nodes[i].minimum=1024;nodes[i].maximum=65535; }
     nodes[6].label="Host port";nodes[6].value=cfg.hostPort;nodes[7].label="Join port";nodes[7].value=cfg.joinPort;
