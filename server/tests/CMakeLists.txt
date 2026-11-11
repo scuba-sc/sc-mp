@@ -23,6 +23,8 @@
 #                                 and temporary files; it never executes the installer or changes system accounts
 #   relay_windows_user_stage     stages a synthetic executable into temporary folders, checks explicit replacement,
 #                                 config preservation and junction refusal, and exercises rollback on a locked executable
+#   sco_relay_windows_process    checks --check-config with the selected UDP port already bound, then exercises a
+#                                 real relay child, authenticated loopback clients, routing, and clean shutdown
 # The full binary/link-boundary checks are Linux-only; test_server and the source-level directive check run on both.
 
 add_executable(test_server

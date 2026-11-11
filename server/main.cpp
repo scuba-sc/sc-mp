@@ -4,9 +4,10 @@
 // stats line and exits 0. Everything it does besides wiring is in the other files of server/.
 //
 //     sco-relay <config-file>
+//     sco-relay --check-config <config-file>
 //
-// Exit status: 0 after a clean stop, 1 when it cannot start (the message says why and what to
-// do), 2 when it is started the wrong way.
+// Normal mode exits 0 after a clean stop, 1 when it cannot start, and 2 when invoked incorrectly.
+// --check-config exits 0 for a valid config, 1 when it is invalid, and 2 when invoked incorrectly.
 #include "address_rule.h"
 #include "config.h"
 #include "log.h"
@@ -65,11 +66,28 @@ uint64_t NowMs() {
 void PrintUsage(std::FILE* out) {
     std::fprintf(out,
                  "usage: sco-relay <config-file>\n"
+                 "       sco-relay --check-config <config-file>\n"
                  "\n"
                  "Hosts one sco.net session on one UDP port. Copy server/sco-relay.example.conf, set the\n"
                  "passphrase and max_players in it, and give the copy as the argument. Stop the server\n"
                  "with Ctrl+C (SIGTERM on POSIX): it tells the players and exits 0.\n"
+                 "--check-config reads and validates a config, prints a short summary, and exits without\n"
+                 "opening a socket or starting the relay. Its errors do not echo paths or config values.\n"
+                 "A config literally named --check-config can be passed as ./--check-config.\n"
                  "Windows wrappers may append --stop-event <existing-local-event>.\n");
+}
+
+void PrintConfigCheckSummary(const sco::relay::Settings& settings) {
+    std::fprintf(stdout,
+                 "Configuration is valid.\n"
+                 "UDP port: %u\n"
+                 "Maximum players: %u\n"
+                 "Passphrase: configured (not shown)\n"
+                 "Additional allowed-address ranges: %zu\n"
+                 "Nearby-only forwarding: %s\n"
+                 "Preflight only: no socket was opened and the relay was not started.\n",
+                 static_cast<unsigned>(settings.port), static_cast<unsigned>(settings.maxPlayers),
+                 settings.allowedAddresses.size(), settings.nearbyOnly ? "on" : "off");
 }
 
 }  // namespace
@@ -77,6 +95,23 @@ void PrintUsage(std::FILE* out) {
 int main(int argc, char** argv) {
     if (argc == 2 && (std::strcmp(argv[1], "-h") == 0 || std::strcmp(argv[1], "--help") == 0)) {
         PrintUsage(stdout);
+        return 0;
+    }
+    if (argc > 1 && std::strcmp(argv[1], "--check-config") == 0) {
+        if (argc != 3) {
+            PrintUsage(stderr);
+            return 2;
+        }
+        sco::relay::Settings settings;
+        std::string why;
+        if (!sco::relay::LoadConfig(argv[2], &settings, &why)) {
+            // Validator detail can contain raw paths or invalid values. Keep preflight errors fixed and bounded.
+            std::fprintf(stderr,
+                         "sco-relay: config check failed; verify the config path and settings. "
+                         "No path or config values were printed.\n");
+            return 1;
+        }
+        PrintConfigCheckSummary(settings);
         return 0;
     }
     if (argc != 2
