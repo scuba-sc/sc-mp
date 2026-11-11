@@ -172,6 +172,7 @@ The relay tests are registered with CTest alongside the rest of sc-mp:
 | `test_server` | the unit tests: the config reader, the address rule, the wire bytes (golden vectors for `multiplayer.relay`, `multiplayer.near_up` and `multiplayer.near.<slot>`), the roster, nearby-only forwarding, the session over the kit's in-memory test network, the run loop, and a real session over loopback UDP |
 | `sco_relay_program` | the real POSIX CLI: config preflight redaction and behavior with an occupied port, normal startup, bad config, and clean signal shutdown |
 | `sco_relay_windows_process` | on Windows, config preflight with its UDP port already bound, then a real relay child, authenticated loopback clients, routing, and clean shutdown |
+| `sco_relay_windows_loopback` | on Windows, a loopback-only test relay checks preflight, authentication, bidirectional routing, event-driven shutdown, endpoint disappearance and port rebind; it does not establish parent-death or LAN behavior |
 | `net_boundary_checks` | that the checks below fire when they should, on altered copies of the kit's files |
 | `relay_no_game_code` | that the server and shared `plugins/multiplayer/relay_wire.h` hold no game code, and that the server touches the kit's network library in one file |
 | `relay_no_game_code_checks` | that the source gate permits the guarded Windows SDK headers only at their use sites and rejects other Windows headers or parent paths |
@@ -182,8 +183,8 @@ The relay tests are registered with CTest alongside the rest of sc-mp:
 | `relay_windows_user_stage` | uses synthetic files to check explicit replacement, config preservation, junction refusal, and rollback when an executable is locked; it does not start the relay |
 
 `test_server` and `relay_no_implicit_link_directives` run on Windows and Linux. The POSIX shell and binary/link-boundary
-checks are Linux-only. `sco_relay_windows_process` runs on Windows; `relay_windows_user_stage` runs there when PowerShell
-is available.
+checks are Linux-only. Both Windows process tests run on Windows; `relay_windows_user_stage` runs there when PowerShell
+is available. The loopback-only fixture uses the production relay executable only for `--check-config` preflight.
 
 `test_server` includes `tests/net_mem.h` from the extracted kit (a seeded lossy in-memory network); the server
 itself does not.

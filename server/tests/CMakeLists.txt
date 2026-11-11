@@ -76,6 +76,19 @@ add_test(NAME relay_compiler_environment_checks
 set_tests_properties(relay_compiler_environment_checks PROPERTIES TIMEOUT 30)
 
 if(WIN32)
+  # Test-only composition: production session/run-loop code with an unconditionally
+  # loopback-bound socket. Never installed; production CLI is used only for preflight.
+  add_executable(sco_relay_loopback_fixture loopback_relay.cpp)
+  target_link_libraries(sco_relay_loopback_fixture PRIVATE sco_relay_server)
+  sco_relay_target_setup(sco_relay_loopback_fixture)
+  add_executable(test_windows_loopback test_windows_loopback.cpp)
+  target_include_directories(test_windows_loopback PRIVATE "${SCO_CORE_SOURCE_ROOT}/include")
+  target_link_libraries(test_windows_loopback PRIVATE sco_net ws2_32 iphlpapi)
+  sco_relay_target_setup(test_windows_loopback)
+  add_test(NAME sco_relay_windows_loopback COMMAND test_windows_loopback
+    $<TARGET_FILE:sco_relay_loopback_fixture> $<TARGET_FILE:sco-relay>)
+  set_tests_properties(sco_relay_windows_loopback PROPERTIES TIMEOUT 60 LABELS "loopback;process")
+
   add_executable(test_windows_process test_windows_process.cpp)
   target_include_directories(test_windows_process PRIVATE "${SCO_CORE_SOURCE_ROOT}/include")
   target_link_libraries(test_windows_process PRIVATE sco_net ws2_32)
