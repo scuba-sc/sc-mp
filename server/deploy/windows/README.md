@@ -85,6 +85,21 @@ reports as a retained rollback backup before removing it.
 
 ## Foreground start and clean stop
 
+After editing the config, optionally validate it without starting the relay:
+
+```powershell
+$relayDirectory = Join-Path $env:USERPROFILE 'sc-relay'
+$relayExecutable = Join-Path $relayDirectory 'sco-relay.exe'
+$relayConfig = Join-Path $relayDirectory 'sco-relay.conf'
+& $relayExecutable --check-config $relayConfig
+```
+
+This preflight reads the config and prints a short summary with the passphrase
+redacted. It does not open or bind sockets, create a stop event, write files, or
+start the relay. It does not test reachability, firewall behavior,
+interoperability, or gameplay. Failure messages do not echo the path or config
+values. See the relay's [run instructions](../../README.md#run).
+
 To start the relay, run it in the foreground from PowerShell:
 
 ```powershell

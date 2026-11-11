@@ -91,10 +91,26 @@ POSIX-only shell boundary checks remain separate.
 
 ## Run
 
+On POSIX, copy the example config, set a private passphrase (12 to 128 bytes) and `max_players`, then run:
+
 ```
-cp server/sco-relay.example.conf my.conf     # set passphrase (12 to 128 bytes) and max_players, at least
+cp server/sco-relay.example.conf my.conf
 build/server/sco-relay my.conf
 ```
+
+To validate an operator-supplied config without starting the relay, run:
+
+```
+build/server/sco-relay --check-config my.conf
+```
+
+This read-only preflight checks the same config rules used at startup and prints a short summary with the passphrase
+redacted. It opens or binds no socket, creates no Windows stop event, writes no files, and starts no server. It does
+not test reachability, firewall behavior, relay/player interoperability, or gameplay. Exit status 0 means the config
+passed validation; status 1 means it could not be read or failed validation; status 2 means the command was used
+incorrectly. Failure messages do not echo the path or config values; inspect the file locally to find the issue.
+
+On Windows, follow the [per-user staging and foreground run instructions](deploy/windows/README.md).
 
 The example file lists every setting with one comment line each. It refuses to start while the passphrase is still
 the placeholder. The server takes one seat of the session, so 15 players is the most (sco-core's limit of 16 peers
@@ -146,7 +162,8 @@ The relay tests are registered with CTest alongside the rest of sc-mp:
 | Test | What it proves |
 | --- | --- |
 | `test_server` | the unit tests: the config reader, the address rule, the wire bytes (golden vectors for `multiplayer.relay`, `multiplayer.near_up` and `multiplayer.near.<slot>`), the roster, nearby-only forwarding, the session over the kit's in-memory test network, the run loop, and a real session over loopback UDP |
-| `sco_relay_program` | the real program: how it starts, what it says for a bad config or a taken port, and that it exits 0 after SIGTERM or SIGINT |
+| `sco_relay_program` | the real POSIX CLI: config preflight redaction and behavior with an occupied port, normal startup, bad config, and clean signal shutdown |
+| `sco_relay_windows_process` | on Windows, config preflight with its UDP port already bound, then a real relay child, authenticated loopback clients, routing, and clean shutdown |
 | `net_boundary_checks` | that the checks below fire when they should, on altered copies of the kit's files |
 | `relay_no_game_code` | that the server and shared `plugins/multiplayer/relay_wire.h` hold no game code, and that the server touches the kit's network library in one file |
 | `relay_no_game_code_checks` | that the source gate permits the guarded Windows SDK headers only at their use sites and rejects other Windows headers or parent paths |
@@ -156,8 +173,9 @@ The relay tests are registered with CTest alongside the rest of sc-mp:
 | `relay_install_guard_checks` | mocked account-identity and config-path guard cases using temporary files; the installer is not executed and system accounts are not changed |
 | `relay_windows_user_stage` | uses synthetic files to check explicit replacement, config preservation, junction refusal, and rollback when an executable is locked; it does not start the relay |
 
-`test_server` and `relay_no_implicit_link_directives` run on Windows and Linux. The process and binary/link-boundary
-tests run on Linux except for `sco_relay_windows_process`, which runs on Windows.
+`test_server` and `relay_no_implicit_link_directives` run on Windows and Linux. The POSIX shell and binary/link-boundary
+checks are Linux-only. `sco_relay_windows_process` runs on Windows; `relay_windows_user_stage` runs there when PowerShell
+is available.
 
 `test_server` includes `tests/net_mem.h` from the extracted kit (a seeded lossy in-memory network); the server
 itself does not.
