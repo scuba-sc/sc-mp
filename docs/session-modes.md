@@ -60,10 +60,11 @@ never logged or run as a command, and lasts for one session. The layout and rule
 
 ## Discovery, persistence, and recovery
 
-Players currently enter a numeric IPv4 address and port, or select one of up to eight locally saved
-profiles. sc-mp has no LAN browser, public directory, account service, or automatic retry. The relay
-does not advertise to an internet service. Local persistence covers configuration only; it does not
-preserve world state, peer identity, or entity ids.
+Players currently enter the remote server's numeric IPv4 address and port to
+join, or select one of up to eight locally saved profiles. sc-mp has no LAN
+browser, public directory, account service, or automatic retry. The relay does
+not advertise to an internet service. Local persistence covers configuration
+only; it does not preserve world state, peer identity, or entity ids.
 
 A minimal later discovery path should be LAN-only, opt-in, and non-authoritative: advertise a
 protocol generation, a mode label, a bounded player count, and a reachable endpoint; never advertise
