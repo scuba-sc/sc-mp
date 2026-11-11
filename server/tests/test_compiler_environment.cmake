@@ -84,8 +84,30 @@ file(WRITE "${_configure_probe_source}/CMakeLists.txt"
   "project(relay_environment_probe LANGUAGES C CXX)\n"
   "set(SCO_RELAY_COMPILER_ENVIRONMENT_SNAPSHOT \"\${CMAKE_BINARY_DIR}/environment.txt\")\n"
   "include(\"${_script}\")\n")
+# Exercise the actual selected toolchain, not CMake's unrelated default generator.
+# In particular, a Release Ninja build must not silently launch an MSBuild Debug
+# probe (which can require a different PDB service/compiler-host setup).
+set(_probe_configure_args "")
+if(SCO_RELAY_TEST_GENERATOR)
+  list(APPEND _probe_configure_args -G "${SCO_RELAY_TEST_GENERATOR}")
+endif()
+foreach(_selection IN ITEMS GENERATOR_PLATFORM GENERATOR_TOOLSET MAKE_PROGRAM C_COMPILER CXX_COMPILER)
+  if(NOT "${SCO_RELAY_TEST_${_selection}}" STREQUAL "")
+    list(APPEND _probe_configure_args "-DCMAKE_${_selection}=${SCO_RELAY_TEST_${_selection}}")
+  endif()
+endforeach()
+if(SCO_RELAY_TEST_BUILD_TYPE)
+  list(APPEND _probe_configure_args "-DCMAKE_BUILD_TYPE=${SCO_RELAY_TEST_BUILD_TYPE}")
+endif()
+if(SCO_RELAY_TEST_CONFIGURATION)
+  list(APPEND _probe_configure_args "-DCMAKE_TRY_COMPILE_CONFIGURATION=${SCO_RELAY_TEST_CONFIGURATION}")
+endif()
+if(SCO_RELAY_TEST_WINDOWS_SDK)
+  list(APPEND _probe_configure_args "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=${SCO_RELAY_TEST_WINDOWS_SDK}")
+endif()
 execute_process(
-  COMMAND "${SCO_RELAY_CMAKE_COMMAND}" -S "${_configure_probe_source}" -B "${_configure_probe_build}"
+  COMMAND "${SCO_RELAY_CMAKE_COMMAND}" ${_probe_configure_args}
+    -S "${_configure_probe_source}" -B "${_configure_probe_build}"
   RESULT_VARIABLE _real_configure_result
   OUTPUT_VARIABLE _real_configure_stdout
   ERROR_VARIABLE _real_configure_stderr)
@@ -105,7 +127,7 @@ if(NOT _real_build_check_result EQUAL 0)
 endif()
 execute_process(
   COMMAND "${SCO_RELAY_CMAKE_COMMAND}" -E env "CXXFLAGS=-DRELAY_ENVIRONMENT_POISON=1"
-    "${SCO_RELAY_CMAKE_COMMAND}" -S "${_configure_probe_source}"
+    "${SCO_RELAY_CMAKE_COMMAND}" ${_probe_configure_args} -S "${_configure_probe_source}"
     -B "${SCO_RELAY_TEST_BINARY_DIR}/configure-probe-poisoned"
   RESULT_VARIABLE _real_poisoned_configure_result
   OUTPUT_VARIABLE _real_poisoned_configure_stdout
@@ -114,7 +136,7 @@ if(_real_poisoned_configure_result EQUAL 0)
   message(FATAL_ERROR "CXXFLAGS imported by a real CMake project() should fail configuration")
 endif()
 execute_process(
-  COMMAND "${SCO_RELAY_CMAKE_COMMAND}"
+  COMMAND "${SCO_RELAY_CMAKE_COMMAND}" ${_probe_configure_args}
     "-DCMAKE_CXX_FLAGS_INIT=-include ${_bad_include}/injected.h"
     -S "${_configure_probe_source}" -B "${SCO_RELAY_TEST_BINARY_DIR}/configure-probe-poisoned-init"
   RESULT_VARIABLE _real_poisoned_init_result
@@ -124,7 +146,7 @@ if(_real_poisoned_init_result EQUAL 0)
   message(FATAL_ERROR "caller-supplied CMAKE_CXX_FLAGS_INIT should fail before project()")
 endif()
 execute_process(
-  COMMAND "${SCO_RELAY_CMAKE_COMMAND}"
+  COMMAND "${SCO_RELAY_CMAKE_COMMAND}" ${_probe_configure_args}
     "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=${_script}"
     -S "${_configure_probe_source}" -B "${SCO_RELAY_TEST_BINARY_DIR}/configure-probe-hook"
   RESULT_VARIABLE _real_hook_result
